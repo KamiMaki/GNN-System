@@ -52,12 +52,16 @@ def training_worker(job_id: str, dataset_id: str):
             data.test_mask = data.test_mask[:, 0]
 
         # Initialize AutoGL solver
+        # Enumerate common GNN architectures for automatic selection
+        model_choices = ["gcn", "gat", "sage", "gin"]
+        
         solver = AutoNodeClassifier(
             feature_module=None,
             graph_module=None,
-            model_module="gat", # Using a single model for simplicity
-            hpo_module=None,
+            model_module=model_choices, 
+            hpo_module="random",
             ensemble_module=None,
+            max_evals=10, # limit HPO trials for speed in this demo
         )
 
         # Run training

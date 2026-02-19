@@ -10,7 +10,7 @@ router = APIRouter(
     tags=["Demo Mode"],
 )
 
-MOCK_DATASET_FILENAME = "cora.pt"
+MOCK_DATASET_FILENAME = "circuitnet.pt"
 
 @router.get("/start")
 async def start_demo(background_tasks: BackgroundTasks):

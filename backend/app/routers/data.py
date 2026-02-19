@@ -56,6 +56,15 @@ async def explore_dataset(dataset_id: str):
             "num_features": data.num_node_features,
             "num_classes": data.y.max().item() + 1 if data.y is not None else "N/A",
             "is_directed": data.is_directed(),
+            "avg_degree": data.num_edges / data.num_nodes if data.num_nodes > 0 else 0,
+            "has_isolated_nodes": data.has_isolated_nodes(),
+            "has_self_loops": data.has_self_loops(),
+            "feature_stats": {
+                 "min": data.x.min().item() if data.x is not None else None,
+                 "max": data.x.max().item() if data.x is not None else None,
+                 "mean": data.x.mean().item() if data.x is not None else None,
+                 "std": data.x.std().item() if data.x is not None else None,
+            } if data.x is not None else None
         }
         return stats
     except Exception as e:
