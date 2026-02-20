@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-python-multipart
-autogl
-torch
-torch_geometric
-pandas

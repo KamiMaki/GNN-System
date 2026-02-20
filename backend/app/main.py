@@ -1,38 +1,32 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import data, training, explainer, demo
 
-# Create the FastAPI app instance
-app = FastAPI(
-    title="AutoCircuitGNN Backend",
-    description="API for managing GNN datasets, training, and explainability.",
-    version="0.1.0",
-)
+from app.core.store import put_dataset
+from app.data.mock_loader import load_mock_dataset
 
-# Define the list of origins that are allowed to make cross-origin requests.
-# We'll allow our Next.js frontend which will run on localhost:3000
-origins = [
-    "http://localhost:3000",
-]
 
-# Add CORSMiddleware to the application instance
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Pre-load mock dataset at startup
+    mock_record = load_mock_dataset()
+    put_dataset(mock_record["dataset_id"], mock_record)
+    yield
+
+
+app = FastAPI(title="LayoutXpert GNN API", version="0.2.0", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-@app.get("/", tags=["Root"])
-async def read_root():
-    """
-    Root endpoint to check if the server is running.
-    """
-    return {"message": "Welcome to the AutoCircuitGNN API!"}
+from app.routers import datasets, tasks, projects
 
-# Add the routers
-app.include_router(data.router, prefix="/api")
-app.include_router(training.router, prefix="/api")
-app.include_router(explainer.router, prefix="/api")
-app.include_router(demo.router, prefix="/api")
+app.include_router(datasets.router, prefix="/api/v1")
+app.include_router(tasks.router, prefix="/api/v1")
+app.include_router(projects.router, prefix="/api/v1")
