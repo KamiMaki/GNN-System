@@ -65,6 +65,22 @@ def _dataset_for_project(project: dict) -> dict:
     return ds
 
 
+def _task_to_status(task: dict, project_id: str) -> TaskStatus:
+    return TaskStatus(
+        task_id=task["task_id"],
+        project_id=project_id,
+        status=task["status"],
+        progress=task.get("progress", 0),
+        current_trial=task.get("current_trial"),
+        total_trials=task.get("total_trials"),
+        device=task.get("device"),
+        results=task.get("results"),
+        best_config=task.get("best_config"),
+        started_at=task.get("started_at"),
+        completed_at=task.get("completed_at"),
+    )
+
+
 def _to_summary(p: dict) -> ProjectSummary:
     return ProjectSummary(
         project_id=p["project_id"],
@@ -96,6 +112,7 @@ async def create_project(body: CreateProjectRequest):
         "imputation_log": [],
         "training_config": None,
         "task_id": None,
+        "task_ids": [],
     }
     store.put_project(project_id, record)
     return _to_summary(record)
@@ -105,6 +122,50 @@ async def create_project(body: CreateProjectRequest):
 async def list_projects_endpoint():
     projects = store.list_projects()
     return [_to_summary(p) for p in projects]
+
+
+# ── Demo Datasets (must be before /{project_id} routes) ──
+
+DEMO_DATASETS = [
+    {
+        "id": "basic",
+        "name": "Basic Circuit",
+        "description": "Simple node classification with clean data (400 nodes)",
+        "nodes": 400,
+        "edges": 800,
+        "tags": ["single-graph", "clean"],
+    },
+    {
+        "id": "edge_attrs",
+        "name": "Edge Attributes",
+        "description": "Graph with extra edge features: routing layer, resistance, coupling capacitance",
+        "nodes": 330,
+        "edges": 660,
+        "tags": ["edge-features"],
+    },
+    {
+        "id": "multigraph",
+        "name": "Multi-Graph",
+        "description": "3 separate circuit graphs (graph_A, graph_B, graph_C)",
+        "nodes": 350,
+        "edges": 700,
+        "tags": ["multi-graph"],
+    },
+    {
+        "id": "dirty",
+        "name": "Dirty Data",
+        "description": "Missing values (~5%), outliers, and mixed-type columns for testing error handling",
+        "nodes": 400,
+        "edges": 800,
+        "tags": ["missing-data", "outliers"],
+    },
+]
+
+
+@router.get("/demo-datasets")
+async def list_demo_datasets():
+    """List available demo datasets."""
+    return DEMO_DATASETS
 
 
 # ── Sample Data (must be before /{project_id} routes) ──
@@ -195,17 +256,7 @@ async def get_project(project_id: str):
     if p.get("task_id"):
         task = store.get_task(p["task_id"])
         if task:
-            detail.task_status = TaskStatus(
-                task_id=task["task_id"],
-                project_id=project_id,
-                status=task["status"],
-                progress=task.get("progress", 0),
-                current_trial=task.get("current_trial"),
-                total_trials=task.get("total_trials"),
-                device=task.get("device"),
-                results=task.get("results"),
-                best_config=task.get("best_config"),
-            )
+            detail.task_status = _task_to_status(task, project_id)
 
     return detail
 
@@ -284,34 +335,110 @@ def _ingest_single_graph(
 
 
 @router.post("/{project_id}/load-demo", response_model=DatasetSummary)
-async def load_demo_data(project_id: str):
-    """Load built-in mock/demo dataset directly into a project."""
+async def load_demo_data(project_id: str, demo_id: str = Query(default="basic")):
+    """Load a built-in demo dataset into a project.
+
+    demo_id options: basic, edge_attrs, multigraph, dirty
+    """
+    import pandas as pd
+
     _project_or_404(project_id)
 
     mock_dir = Path(__file__).resolve().parent.parent.parent / "mock_data"
-    nodes_train_path = mock_dir / "nodes_train.csv"
-    edges_train_path = mock_dir / "edges_train.csv"
-    nodes_test_path = mock_dir / "nodes_test.csv"
-    edges_test_path = mock_dir / "edges_test.csv"
 
-    if not nodes_train_path.exists() or not edges_train_path.exists():
-        raise HTTPException(status_code=404, detail="Demo data not found on server")
+    # Map demo_id to directory
+    DEMO_DIRS = {
+        "basic": mock_dir / "demo_basic",
+        "edge_attrs": mock_dir / "demo_edge_attrs",
+        "multigraph": mock_dir / "demo_multigraph",
+        "dirty": mock_dir / "demo_dirty",
+    }
+
+    # Fallback: original mock data
+    if demo_id not in DEMO_DIRS:
+        demo_dir = mock_dir
+    else:
+        demo_dir = DEMO_DIRS[demo_id]
+
+    if not demo_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Demo data '{demo_id}' not found on server")
 
     try:
-        nodes_test_bytes = nodes_test_path.read_bytes() if nodes_test_path.exists() else None
-        edges_test_bytes = edges_test_path.read_bytes() if edges_test_path.exists() else None
+        if demo_id == "multigraph":
+            # Multi-graph: iterate subdirectories
+            all_nodes_train = []
+            all_edges_train = []
+            graph_names = sorted([
+                d.name for d in demo_dir.iterdir() if d.is_dir()
+            ])
+            if not graph_names:
+                raise HTTPException(status_code=404, detail="No graph subdirectories found")
 
-        record = _ingest_single_graph(
-            "demo-circuit",
-            nodes_train_path.read_bytes(),
-            edges_train_path.read_bytes(),
-            nodes_test_bytes,
-            edges_test_bytes,
-        )
+            for gname in graph_names:
+                gdir = demo_dir / gname
+                nt = gdir / "nodes_train.csv"
+                et = gdir / "edges_train.csv"
+                if not nt.exists() or not et.exists():
+                    continue
+                record = _ingest_single_graph(gname, nt.read_bytes(), et.read_bytes())
+                record["nodes_df_train"]["_graph"] = gname
+                record["nodes_df_test"]["_graph"] = gname
+                record["edges_df_train"]["_graph"] = gname
+                record["edges_df_test"]["_graph"] = gname
+                all_nodes_train.append(record["nodes_df_train"])
+                all_edges_train.append(record["edges_df_train"])
 
-        dataset_id = str(uuid.uuid4())
-        record["dataset_id"] = dataset_id
-        store.put_dataset(dataset_id, record)
+            merged_nodes = pd.concat(all_nodes_train, ignore_index=True)
+            merged_edges = pd.concat(all_edges_train, ignore_index=True)
+            explore_stats = compute_generic_explore(merged_nodes, merged_edges)
+            num_features = len([c for c in explore_stats["columns"] if c["dtype"] == "numeric"])
+
+            dataset_id = str(uuid.uuid4())
+            ds_record = {
+                "dataset_id": dataset_id,
+                "name": f"demo-multigraph ({len(graph_names)} graphs)",
+                "num_nodes": len(merged_nodes),
+                "num_edges": len(merged_edges),
+                "num_features": num_features,
+                "num_classes": 0,
+                "is_directed": True,
+                "task_type": "pending",
+                "nodes_df_train": merged_nodes,
+                "nodes_df_test": pd.DataFrame(),
+                "edges_df_train": merged_edges,
+                "edges_df_test": pd.DataFrame(),
+                "explore_stats": explore_stats,
+                "graph_names": graph_names,
+            }
+            store.put_dataset(dataset_id, ds_record)
+
+        else:
+            # Single graph demo
+            nodes_train_path = demo_dir / "nodes_train.csv"
+            edges_train_path = demo_dir / "edges_train.csv"
+            nodes_test_path = demo_dir / "nodes_test.csv"
+            edges_test_path = demo_dir / "edges_test.csv"
+
+            if not nodes_train_path.exists() or not edges_train_path.exists():
+                raise HTTPException(status_code=404, detail="Demo data not found on server")
+
+            nodes_test_bytes = nodes_test_path.read_bytes() if nodes_test_path.exists() else None
+            edges_test_bytes = edges_test_path.read_bytes() if edges_test_path.exists() else None
+
+            demo_name = f"demo-{demo_id}"
+            record = _ingest_single_graph(
+                demo_name,
+                nodes_train_path.read_bytes(),
+                edges_train_path.read_bytes(),
+                nodes_test_bytes,
+                edges_test_bytes,
+            )
+
+            dataset_id = str(uuid.uuid4())
+            record["dataset_id"] = dataset_id
+            ds_record = record
+
+            store.put_dataset(dataset_id, ds_record)
 
         store.update_project(
             project_id,
@@ -320,15 +447,23 @@ async def load_demo_data(project_id: str):
             status="data_uploaded",
         )
 
+        # Check for edge attrs
+        has_edge_attrs = False
+        edges_df = ds_record.get("edges_df_train")
+        if edges_df is not None and len(edges_df.columns) > 0:
+            edge_feature_cols = [c for c in edges_df.columns if c not in ("src_id", "dst_id", "_graph")]
+            has_edge_attrs = len(edge_feature_cols) > 0
+
         return DatasetSummary(
             dataset_id=dataset_id,
-            name=record["name"],
-            num_nodes=record["num_nodes"],
-            num_edges=record["num_edges"],
-            num_features=record["num_features"],
+            name=ds_record["name"],
+            num_nodes=ds_record["num_nodes"],
+            num_edges=ds_record["num_edges"],
+            num_features=ds_record.get("num_features", 0),
             num_classes=0,
             is_directed=True,
             task_type="pending",
+            has_edge_attrs=has_edge_attrs,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -718,6 +853,7 @@ async def start_training(
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    started_at = _now_iso()
     task_record = {
         "task_id": task_id,
         "project_id": project_id,
@@ -736,12 +872,19 @@ async def start_training(
         "best_config": None,
         "models": body.models if body.models else None,
         "n_trials": body.n_trials,
+        "started_at": started_at,
+        "completed_at": None,
     }
     store.put_task(task_id, task_record)
+
+    # Append to task_ids list for experiment history
+    task_ids = project.get("task_ids", [])
+    task_ids.append(task_id)
 
     store.update_project(
         project_id,
         task_id=task_id,
+        task_ids=task_ids,
         training_config={"models": body.models, "n_trials": body.n_trials},
         current_step=3,
         status="training",
@@ -757,6 +900,7 @@ async def start_training(
         current_trial=0,
         total_trials=body.n_trials,
         device=device,
+        started_at=started_at,
     )
 
 
@@ -771,17 +915,22 @@ async def get_project_status(project_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    return TaskStatus(
-        task_id=task["task_id"],
-        project_id=project_id,
-        status=task["status"],
-        progress=task.get("progress", 0),
-        current_trial=task.get("current_trial"),
-        total_trials=task.get("total_trials"),
-        device=task.get("device"),
-        results=task.get("results"),
-        best_config=task.get("best_config"),
-    )
+    return _task_to_status(task, project_id)
+
+
+# ── Experiment History ──
+
+@router.get("/{project_id}/experiments", response_model=list[TaskStatus])
+async def list_experiments(project_id: str):
+    """List all training runs for a project."""
+    project = _project_or_404(project_id)
+    task_ids = project.get("task_ids", [])
+    results = []
+    for tid in task_ids:
+        task = store.get_task(tid)
+        if task:
+            results.append(_task_to_status(task, project_id))
+    return results
 
 
 # ── Step 4: Report ──
@@ -804,4 +953,19 @@ async def get_project_report(project_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="Report not available")
 
+    return report
+
+
+@router.get("/{project_id}/report/{task_id}", response_model=Report)
+async def get_experiment_report(project_id: str, task_id: str):
+    """Get report for a specific training run."""
+    _project_or_404(project_id)
+    task = store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task["status"] != "COMPLETED":
+        raise HTTPException(status_code=400, detail="Training not completed yet")
+    report = task.get("report")
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not available")
     return report

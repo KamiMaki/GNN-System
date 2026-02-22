@@ -94,24 +94,34 @@ def dataframes_to_pyg_dynamic(
     task_type: str,
     scaler: StandardScaler | None = None,
     fit_scaler: bool = True,
-) -> tuple[Data, StandardScaler, list[str]]:
+) -> tuple[Data | list[Data], StandardScaler, list[str]]:
     """Convert DataFrames to PyG Data with dynamically detected features.
 
     Auto-detects numeric and categorical columns (excluding node_id and label).
-    Returns (Data, fitted_scaler, feature_names).
+    Returns (Data or list[Data], fitted_scaler, feature_names).
     """
-    # Node ID mapping
-    node_ids = nodes_df["node_id"].values
-    id_to_idx = {int(nid) if not pd.isna(nid) else i for i, nid in enumerate(node_ids)}
-    id_to_idx = {}
-    for i, nid in enumerate(nodes_df["node_id"].values):
-        try:
-            id_to_idx[int(nid)] = i
-        except (ValueError, TypeError):
-            id_to_idx[str(nid)] = i
+    has_graph_col = "_graph" in nodes_df.columns and "_graph" in edges_df.columns
+    
+    if len(nodes_df) == 0:
+        empty_data = Data(
+            x=torch.zeros((0, 1), dtype=torch.float),
+            y=torch.zeros((0,), dtype=torch.long if task_type.endswith("classification") else torch.float),
+            edge_index=torch.zeros((2, 0), dtype=torch.long),
+            edge_attr=torch.zeros((0, 1), dtype=torch.float),
+            num_nodes=0
+        )
+        empty_data.num_classes = 1
+        empty_data.num_features_actual = 1
+        return [empty_data] if has_graph_col else empty_data, scaler, []
+        
+    if not has_graph_col:
+        nodes_df = nodes_df.copy()
+        edges_df = edges_df.copy()
+        nodes_df["_graph"] = "default"
+        edges_df["_graph"] = "default"
 
-    # Determine feature columns (exclude node_id, label, and non-feature columns)
-    exclude_cols = {"node_id", "id", "index", "name", label_column}
+    # Determine feature columns
+    exclude_cols = {"node_id", "id", "index", "name", label_column, "_graph"}
     all_cols = [c for c in nodes_df.columns if c not in exclude_cols]
 
     numeric_features = []
@@ -157,85 +167,94 @@ def dataframes_to_pyg_dynamic(
     # Concatenate all features
     parts = [numeric_vals]
     parts.extend(ohe_parts)
-    x = np.concatenate(parts, axis=1) if parts else np.zeros((len(nodes_df), 1), dtype=np.float32)
+    x_global = np.concatenate(parts, axis=1) if parts else np.zeros((len(nodes_df), 1), dtype=np.float32)
 
-    num_features = x.shape[1]
+    num_features = x_global.shape[1]
 
-    # Labels
+    # Global Labels
     if task_type in ("node_classification", "graph_classification"):
         label_series = nodes_df[label_column]
-        # Map labels to integers
         unique_labels = sorted(label_series.dropna().unique())
         label_map = {v: i for i, v in enumerate(unique_labels)}
-        node_labels = label_series.map(label_map).fillna(0).values.astype(np.int64)
-
-        if task_type == "graph_classification":
-            # Most common label
-            from collections import Counter
-            counter = Counter(node_labels)
-            graph_label = counter.most_common(1)[0][0]
-            y = torch.tensor([graph_label], dtype=torch.long)
-        else:
-            y = torch.tensor(node_labels, dtype=torch.long)
+        y_per_node = label_series.map(label_map).fillna(0).values.astype(np.int64)
         num_classes = len(unique_labels)
     elif task_type in ("node_regression", "graph_regression"):
-        node_scores = pd.to_numeric(nodes_df[label_column], errors="coerce").fillna(0).values.astype(np.float32)
-        if task_type == "graph_regression":
-            y = torch.tensor([float(node_scores.mean())], dtype=torch.float)
-        else:
-            y = torch.tensor(node_scores, dtype=torch.float)
+        y_per_node = pd.to_numeric(nodes_df[label_column], errors="coerce").fillna(0).values.astype(np.float32)
         num_classes = 1
     else:
         raise ValueError(f"Unknown task_type: {task_type}")
 
-    # Build edge_index
-    src_col = edges_df["src_id"]
-    dst_col = edges_df["dst_id"]
-
-    src_indices = []
-    dst_indices = []
-    for s, d in zip(src_col.values, dst_col.values):
-        s_key = int(s) if isinstance(list(id_to_idx.keys())[0] if id_to_idx else 0, int) else str(s)
-        d_key = int(d) if isinstance(list(id_to_idx.keys())[0] if id_to_idx else 0, int) else str(d)
-        try:
-            s_key = int(s)
-        except (ValueError, TypeError):
-            s_key = str(s)
-        try:
-            d_key = int(d)
-        except (ValueError, TypeError):
-            d_key = str(d)
-        if s_key in id_to_idx and d_key in id_to_idx:
-            src_indices.append(id_to_idx[s_key])
-            dst_indices.append(id_to_idx[d_key])
-
-    if src_indices:
-        edge_index = torch.tensor([src_indices, dst_indices], dtype=torch.long)
-    else:
-        edge_index = torch.zeros((2, 0), dtype=torch.long)
-
-    # Edge features (use any numeric columns in edges besides src_id/dst_id)
-    edge_exclude = {"src_id", "dst_id", "id", "is_critical"}
+    # Edge features
+    edge_exclude = {"src_id", "dst_id", "id", "is_critical", "_graph"}
     edge_numeric_cols = [c for c in edges_df.columns if c not in edge_exclude and detect_column_type(edges_df[c]) == "numeric"]
 
-    if edge_numeric_cols and len(src_indices) > 0:
-        # Filter to valid edges
-        valid_mask = edges_df["src_id"].apply(lambda s: (int(s) if pd.notna(s) else s) in id_to_idx if id_to_idx else False)
-        valid_mask &= edges_df["dst_id"].apply(lambda d: (int(d) if pd.notna(d) else d) in id_to_idx if id_to_idx else False)
-        valid_edges = edges_df[valid_mask]
-        edge_attr_vals = valid_edges[edge_numeric_cols].apply(pd.to_numeric, errors="coerce").fillna(0).values.astype(np.float32)
-        edge_attr = torch.tensor(edge_attr_vals, dtype=torch.float)
-    else:
-        edge_attr = torch.zeros((edge_index.shape[1], 1), dtype=torch.float)
+    data_list = []
+    unique_graphs = nodes_df["_graph"].unique()
 
-    data = Data(
-        x=torch.tensor(x, dtype=torch.float),
-        y=y,
-        edge_index=edge_index,
-        edge_attr=edge_attr,
-        num_nodes=len(nodes_df),
-    )
-    data.num_classes = num_classes
-    data.num_features_actual = num_features
+    for g in unique_graphs:
+        g_node_mask = (nodes_df["_graph"] == g).values
+        g_edge_mask = (edges_df["_graph"] == g).values
 
-    return data, scaler, feature_names
+        g_x = x_global[g_node_mask]
+        g_nodes_df = nodes_df[g_node_mask]
+        g_edges_df = edges_df[g_edge_mask]
+        
+        g_y_arr = y_per_node[g_node_mask]
+
+        if task_type == "graph_classification":
+            from collections import Counter
+            counter = Counter(g_y_arr)
+            g_y = torch.tensor([counter.most_common(1)[0][0]], dtype=torch.long)
+        elif task_type == "graph_regression":
+            g_y = torch.tensor([float(g_y_arr.mean())], dtype=torch.float)
+        elif task_type == "node_classification":
+            g_y = torch.tensor(g_y_arr, dtype=torch.long)
+        else:
+            g_y = torch.tensor(g_y_arr, dtype=torch.float)
+
+        g_node_ids = g_nodes_df["node_id"].values
+        g_id_to_idx = {}
+        for i, nid in enumerate(g_node_ids):
+            try:
+                g_id_to_idx[int(nid)] = i
+            except (ValueError, TypeError):
+                g_id_to_idx[str(nid)] = i
+
+        g_src_indices, g_dst_indices, valid_edge_mask = [], [], []
+        for s, d in zip(g_edges_df["src_id"].values, g_edges_df["dst_id"].values):
+            try:
+                s_key, d_key = int(s), int(d)
+            except (ValueError, TypeError):
+                s_key, d_key = str(s), str(d)
+            if s_key in g_id_to_idx and d_key in g_id_to_idx:
+                g_src_indices.append(g_id_to_idx[s_key])
+                g_dst_indices.append(g_id_to_idx[d_key])
+                valid_edge_mask.append(True)
+            else:
+                valid_edge_mask.append(False)
+
+        if g_src_indices:
+            g_edge_index = torch.tensor([g_src_indices, g_dst_indices], dtype=torch.long)
+        else:
+            g_edge_index = torch.zeros((2, 0), dtype=torch.long)
+
+        if edge_numeric_cols and len(g_src_indices) > 0:
+            g_valid_edges = g_edges_df[valid_edge_mask]
+            g_edge_attr_vals = g_valid_edges[edge_numeric_cols].apply(pd.to_numeric, errors="coerce").fillna(0).values.astype(np.float32)
+            g_edge_attr = torch.tensor(g_edge_attr_vals, dtype=torch.float)
+        else:
+            g_edge_attr = torch.zeros((g_edge_index.shape[1], 1), dtype=torch.float)
+
+        data = Data(
+            x=torch.tensor(g_x, dtype=torch.float),
+            y=g_y,
+            edge_index=g_edge_index,
+            edge_attr=g_edge_attr,
+            num_nodes=len(g_nodes_df),
+        )
+        data.num_classes = num_classes
+        data.num_features_actual = num_features
+        data_list.append(data)
+
+    ret_data = data_list if has_graph_col else data_list[0]
+    return ret_data, scaler, feature_names

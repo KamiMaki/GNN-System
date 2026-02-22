@@ -47,15 +47,31 @@ def compute_generic_explore(nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> d
     numeric_cols = [c for c in numeric_cols if c.lower() not in ("node_id", "id", "index")]
     # Pick top 5 by variance
     if len(numeric_cols) > 5:
-        variances = nodes_df[numeric_cols].var().sort_values(ascending=False)
+        numeric_df = nodes_df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+        variances = numeric_df.var().sort_values(ascending=False)
         numeric_cols = list(variances.index[:5])
 
     correlation = compute_correlation(nodes_df, numeric_cols) if numeric_cols else []
+
+    # Analyze edge columns
+    edge_columns = []
+    for col in edges_df.columns:
+        if col.lower() in ("src_id", "dst_id", "_graph"):
+            continue
+        dtype = detect_column_type(edges_df[col])
+        edge_columns.append({
+            "name": col,
+            "dtype": dtype,
+            "missing_count": int(edges_df[col].isna().sum()),
+            "missing_pct": round(float(edges_df[col].isna().mean()) * 100, 2),
+            "unique_count": int(edges_df[col].nunique()),
+        })
 
     return {
         "num_nodes": len(nodes_df),
         "num_edges": len(edges_df),
         "columns": columns,
+        "edge_columns": edge_columns,
         "feature_correlation": correlation,
         "correlation_columns": numeric_cols,
     }

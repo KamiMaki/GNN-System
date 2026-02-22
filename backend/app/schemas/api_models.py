@@ -13,6 +13,7 @@ class DatasetSummary(BaseModel):
     num_classes: int
     is_directed: bool
     task_type: str = "node_classification"
+    has_edge_attrs: bool = False
 
 
 # ── Generic Explore (new) ──
@@ -29,6 +30,7 @@ class GenericExploreData(BaseModel):
     num_nodes: int
     num_edges: int
     columns: list[ColumnInfo]
+    edge_columns: list[ColumnInfo] = []
     feature_correlation: list[dict]  # [{x: str, y: str, value: float}]
     correlation_columns: list[str]
 
@@ -179,6 +181,8 @@ class TaskStatus(BaseModel):
     device: Optional[str] = None
     results: Optional[TaskResults] = None
     best_config: Optional[BestConfig] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
 
 class EpochHistory(BaseModel):
