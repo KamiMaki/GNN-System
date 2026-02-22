@@ -6,11 +6,17 @@ from pathlib import Path
 from typing import Optional
 
 import torch
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core import store
+from app.core.artifacts import (
+    delete_dataset_artifacts,
+    load_dataframe,
+    save_dataset_artifacts,
+)
 from app.core.config import settings
+from app.core.progress import get_progress
 from app.data.feature_engineering import (
     analyze_categorical_column,
     analyze_numeric_column,
@@ -39,7 +45,7 @@ from app.schemas.api_models import (
     TrainingEstimate,
     Report,
 )
-from app.training.pipeline import run_training_task
+from app.training.celery_tasks import run_training_celery
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -67,7 +73,7 @@ def _dataset_for_project(project: dict) -> dict:
 
 def _task_to_status(task: dict, project_id: str) -> TaskStatus:
     return TaskStatus(
-        task_id=task["task_id"],
+        task_id=task.get("task_id", task.get("_id")),
         project_id=project_id,
         status=task["status"],
         progress=task.get("progress", 0),
@@ -83,7 +89,7 @@ def _task_to_status(task: dict, project_id: str) -> TaskStatus:
 
 def _to_summary(p: dict) -> ProjectSummary:
     return ProjectSummary(
-        project_id=p["project_id"],
+        project_id=p.get("project_id", p.get("_id")),
         name=p["name"],
         tags=p.get("tags", []),
         created_at=p["created_at"],
@@ -92,6 +98,28 @@ def _to_summary(p: dict) -> ProjectSummary:
         dataset_id=p.get("dataset_id"),
         task_id=p.get("task_id"),
     )
+
+
+# Keys that are file artifacts and must NOT go into MongoDB
+_ARTIFACT_KEYS = {
+    "pyg_train", "pyg_test", "scaler",
+    "nodes_df_train", "nodes_df_test",
+    "edges_df_train", "edges_df_test",
+    "nodes_df", "edges_df",
+    "pyg_train_list", "pyg_test_list",
+}
+
+
+def _save_and_strip_artifacts(dataset_id: str, record: dict) -> dict:
+    """Extract artifact fields, save to disk, return metadata-only dict."""
+    artifact_data = {}
+    for key in list(record.keys()):
+        if key in _ARTIFACT_KEYS:
+            artifact_data[key] = record.pop(key)
+    if artifact_data:
+        artifact_path = save_dataset_artifacts(dataset_id, artifact_data)
+        record["artifact_path"] = artifact_path
+    return record
 
 
 # ── CRUD ──
@@ -225,7 +253,7 @@ async def get_project(project_id: str):
     p = _project_or_404(project_id)
 
     detail = ProjectDetail(
-        project_id=p["project_id"],
+        project_id=p.get("project_id", p.get("_id")),
         name=p["name"],
         tags=p.get("tags", []),
         created_at=p["created_at"],
@@ -242,7 +270,7 @@ async def get_project(project_id: str):
         ds = store.get_dataset(p["dataset_id"])
         if ds:
             detail.dataset_summary = DatasetSummary(
-                dataset_id=ds["dataset_id"],
+                dataset_id=ds.get("dataset_id", ds.get("_id")),
                 name=ds["name"],
                 num_nodes=ds["num_nodes"],
                 num_edges=ds["num_edges"],
@@ -263,7 +291,11 @@ async def get_project(project_id: str):
 
 @router.delete("/{project_id}")
 async def delete_project(project_id: str):
-    _project_or_404(project_id)
+    project = _project_or_404(project_id)
+    # Clean up dataset artifacts
+    ds_id = project.get("dataset_id")
+    if ds_id:
+        delete_dataset_artifacts(ds_id)
     store.delete_project(project_id)
     return {"detail": "Project deleted"}
 
@@ -410,7 +442,12 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
                 "explore_stats": explore_stats,
                 "graph_names": graph_names,
             }
+            # Save artifacts and strip from record
+            ds_record = _save_and_strip_artifacts(dataset_id, ds_record)
             store.put_dataset(dataset_id, ds_record)
+
+            # For edge attrs check, load edges from artifacts
+            edges_df = load_dataframe(dataset_id, "edges_df_train")
 
         else:
             # Single graph demo
@@ -438,6 +475,11 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
             record["dataset_id"] = dataset_id
             ds_record = record
 
+            # Keep edges reference before stripping
+            edges_df = ds_record.get("edges_df_train")
+
+            # Save artifacts and strip from record
+            ds_record = _save_and_strip_artifacts(dataset_id, ds_record)
             store.put_dataset(dataset_id, ds_record)
 
         store.update_project(
@@ -449,7 +491,6 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
 
         # Check for edge attrs
         has_edge_attrs = False
-        edges_df = ds_record.get("edges_df_train")
         if edges_df is not None and len(edges_df.columns) > 0:
             edge_feature_cols = [c for c in edges_df.columns if c not in ("src_id", "dst_id", "_graph")]
             has_edge_attrs = len(edge_feature_cols) > 0
@@ -501,6 +542,9 @@ async def upload_project_data(
         record = _ingest_single_graph(name, nodes_bytes, edges_bytes, nodes_test_bytes, edges_test_bytes)
         dataset_id = str(uuid.uuid4())
         record["dataset_id"] = dataset_id
+
+        # Save artifacts and strip from record
+        record = _save_and_strip_artifacts(dataset_id, record)
         store.put_dataset(dataset_id, record)
 
         store.update_project(
@@ -655,6 +699,9 @@ async def upload_project_folder(
             "explore_stats": merged_explore,
             "graph_names": graph_names,
         }
+
+        # Save artifacts and strip from record
+        record = _save_and_strip_artifacts(dataset_id, record)
         store.put_dataset(dataset_id, record)
 
         store.update_project(
@@ -698,9 +745,10 @@ async def analyze_column(
 ):
     project = _project_or_404(project_id)
     ds = _dataset_for_project(project)
-    nodes_df = ds["nodes_df_train"]
+    ds_id = ds.get("dataset_id", ds.get("_id"))
+    nodes_df = load_dataframe(ds_id, "nodes_df_train")
 
-    if column_name not in nodes_df.columns:
+    if nodes_df is None or column_name not in nodes_df.columns:
         raise HTTPException(status_code=404, detail=f"Column '{column_name}' not found")
 
     series = nodes_df[column_name]
@@ -716,7 +764,10 @@ async def analyze_column(
 async def get_correlation_endpoint(project_id: str, body: CorrelationRequest):
     project = _project_or_404(project_id)
     ds = _dataset_for_project(project)
-    nodes_df = ds["nodes_df_train"]
+    ds_id = ds.get("dataset_id", ds.get("_id"))
+    nodes_df = load_dataframe(ds_id, "nodes_df_train")
+    if nodes_df is None:
+        raise HTTPException(status_code=400, detail="Dataset artifacts not found")
     return compute_correlation(nodes_df, body.columns)
 
 
@@ -724,7 +775,10 @@ async def get_correlation_endpoint(project_id: str, body: CorrelationRequest):
 async def validate_label_endpoint(project_id: str, body: LabelValidationRequest):
     project = _project_or_404(project_id)
     ds = _dataset_for_project(project)
-    nodes_df = ds["nodes_df_train"]
+    ds_id = ds.get("dataset_id", ds.get("_id"))
+    nodes_df = load_dataframe(ds_id, "nodes_df_train")
+    if nodes_df is None:
+        raise HTTPException(status_code=400, detail="Dataset artifacts not found")
     result = validate_label(nodes_df, body.label_column, body.task_type)
     return result
 
@@ -733,21 +787,34 @@ async def validate_label_endpoint(project_id: str, body: LabelValidationRequest)
 async def impute_missing_endpoint(project_id: str, body: ImputationRequest):
     project = _project_or_404(project_id)
     ds = _dataset_for_project(project)
+    ds_id = ds.get("dataset_id", ds.get("_id"))
+
+    # Load DataFrames from artifacts
+    nodes_df_train = load_dataframe(ds_id, "nodes_df_train")
+    nodes_df_test = load_dataframe(ds_id, "nodes_df_test")
+    edges_df_train = load_dataframe(ds_id, "edges_df_train")
+
+    if nodes_df_train is None:
+        raise HTTPException(status_code=400, detail="Dataset artifacts not found")
 
     # Impute in both train and test DataFrames
-    nodes_df_train = ds["nodes_df_train"]
-    nodes_df_test = ds["nodes_df_test"]
-
     nodes_df_train, filled_train = impute_column(nodes_df_train, body.column, body.method)
-    nodes_df_test, filled_test = impute_column(nodes_df_test, body.column, body.method)
+    if nodes_df_test is not None and len(nodes_df_test) > 0:
+        nodes_df_test, filled_test = impute_column(nodes_df_test, body.column, body.method)
 
-    # Update in store
-    ds["nodes_df_train"] = nodes_df_train
-    ds["nodes_df_test"] = nodes_df_test
+    # Re-save modified artifacts
+    save_dataset_artifacts(ds_id, {
+        "nodes_df_train": nodes_df_train,
+        "nodes_df_test": nodes_df_test,
+    })
 
-    # Refresh explore stats
-    ds["explore_stats"] = compute_generic_explore(nodes_df_train, ds["edges_df_train"])
-    store.put_dataset(ds["dataset_id"], ds)
+    # Refresh explore stats and update MongoDB metadata
+    new_stats = compute_generic_explore(nodes_df_train, edges_df_train)
+    store.update_task  # not needed, just update dataset
+    ds["explore_stats"] = new_stats
+    # Remove _id before re-putting (MongoDB doesn't allow _id in $set)
+    ds_copy = {k: v for k, v in ds.items() if k != "_id"}
+    store.put_dataset(ds_id, ds_copy)
 
     # Log imputation
     project = store.get_project(project_id)
@@ -766,14 +833,20 @@ async def impute_missing_endpoint(project_id: str, body: ImputationRequest):
 async def confirm_data(project_id: str, body: ConfirmDataRequest):
     project = _project_or_404(project_id)
     ds = _dataset_for_project(project)
+    ds_id = ds.get("dataset_id", ds.get("_id"))
+
+    # Load DataFrame from artifacts for validation
+    nodes_df = load_dataframe(ds_id, "nodes_df_train")
+    if nodes_df is None:
+        raise HTTPException(status_code=400, detail="Dataset artifacts not found")
 
     # Validate label one more time
-    result = validate_label(ds["nodes_df_train"], body.label_column, body.task_type)
+    result = validate_label(nodes_df, body.label_column, body.task_type)
     if not result["valid"]:
         raise HTTPException(status_code=400, detail=result["message"])
 
     # Check for remaining missing values in label column
-    label_missing = int(ds["nodes_df_train"][body.label_column].isna().sum())
+    label_missing = int(nodes_df[body.label_column].isna().sum())
     if label_missing > 0:
         raise HTTPException(
             status_code=400,
@@ -791,9 +864,10 @@ async def confirm_data(project_id: str, body: ConfirmDataRequest):
 
     # Update dataset task_type and num_classes
     num_classes = result.get("num_classes", 1) or 1
-    ds["task_type"] = body.task_type
-    ds["num_classes"] = num_classes
-    store.put_dataset(ds["dataset_id"], ds)
+    ds_update = {k: v for k, v in ds.items() if k != "_id"}
+    ds_update["task_type"] = body.task_type
+    ds_update["num_classes"] = num_classes
+    store.put_dataset(ds_id, ds_update)
 
     return _to_summary(store.get_project(project_id))
 
@@ -839,7 +913,6 @@ async def estimate_training_time(
 async def start_training(
     project_id: str,
     body: StartTrainingRequest,
-    background_tasks: BackgroundTasks,
 ):
     project = _project_or_404(project_id)
 
@@ -890,7 +963,7 @@ async def start_training(
         status="training",
     )
 
-    background_tasks.add_task(run_training_task, task_id)
+    run_training_celery.delay(task_id)
 
     return TaskStatus(
         task_id=task_id,
@@ -914,6 +987,12 @@ async def get_project_status(project_id: str):
     task = store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Check Redis for live progress (in-flight tasks)
+    if task["status"] not in ("COMPLETED", "FAILED"):
+        live = get_progress(task_id)
+        if live:
+            task.update(live)
 
     return _task_to_status(task, project_id)
 

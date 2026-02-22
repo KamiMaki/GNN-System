@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timezone
 
 import numpy as np
 import torch
@@ -10,7 +11,9 @@ from sklearn.metrics import (
 )
 
 from app.core import store
+from app.core.artifacts import load_dataframe, load_pyg_data
 from app.core.config import settings
+from app.core.progress import update_progress, delete_progress
 from app.models.factory import get_model
 from app.training.optuna_search import run_hpo
 from app.training.callbacks import ProgressCallback
@@ -56,10 +59,12 @@ def _predict(model, loader, task_type):
 
 
 def run_training_task(task_id: str) -> None:
-    """Background thread entry point. Runs the full training pipeline."""
+    """Celery worker entry point. Runs the full training pipeline."""
+    task = None
     try:
         task = store.get_task(task_id)
         dataset = store.get_dataset(task["dataset_id"])
+        dataset_id = task["dataset_id"]
         project_id = task.get("project_id")
         label_column = task.get("label_column")
         task_type = task.get("task_type", dataset.get("task_type", "node_classification"))
@@ -70,31 +75,40 @@ def run_training_task(task_id: str) -> None:
         store.update_task(task_id, device=device)
 
         # --- PREPROCESSING ---
-        store.update_task(task_id, status="PREPROCESSING", progress=5)
+        update_progress(task_id, status="PREPROCESSING", progress=5)
+
+        # Load artifacts from disk
+        pyg_train = load_pyg_data(dataset_id, "pyg_train")
+        pyg_test = load_pyg_data(dataset_id, "pyg_test")
 
         # Determine if we need dynamic or legacy PyG conversion
-        if label_column and "pyg_train" not in dataset:
+        if label_column and pyg_train is None:
             # Dynamic conversion (new project-based flow)
+            nodes_df_train = load_dataframe(dataset_id, "nodes_df_train")
+            edges_df_train = load_dataframe(dataset_id, "edges_df_train")
+            nodes_df_test = load_dataframe(dataset_id, "nodes_df_test")
+            edges_df_test = load_dataframe(dataset_id, "edges_df_test")
+
             train_data, scaler, feature_names = dataframes_to_pyg_dynamic(
-                dataset["nodes_df_train"],
-                dataset["edges_df_train"],
+                nodes_df_train,
+                edges_df_train,
                 label_column=label_column,
                 task_type=task_type,
                 fit_scaler=True,
             )
             test_data, _, _ = dataframes_to_pyg_dynamic(
-                dataset["nodes_df_test"],
-                dataset["edges_df_test"],
+                nodes_df_test,
+                edges_df_test,
                 label_column=label_column,
                 task_type=task_type,
                 scaler=scaler,
                 fit_scaler=False,
             )
             num_classes = getattr(train_data, "num_classes", 2)
-        elif "pyg_train" in dataset:
-            # Legacy pre-converted data
-            train_data = dataset["pyg_train"]
-            test_data = dataset["pyg_test"]
+        elif pyg_train is not None:
+            # Pre-converted data loaded from artifacts
+            train_data = pyg_train
+            test_data = pyg_test
             num_classes = dataset.get("num_classes", 2)
         else:
             raise ValueError("Dataset has no PyG data and no label_column specified")
@@ -120,10 +134,10 @@ def run_training_task(task_id: str) -> None:
                 weight_pos = n_total / (2.0 * max(n_pos, 1))
                 class_weights = torch.tensor([weight_neg, weight_pos], dtype=torch.float)
 
-        store.update_task(task_id, progress=10)
+        update_progress(task_id, progress=10)
 
         # --- HPO ---
-        store.update_task(task_id, progress=15, status="TRAINING")
+        update_progress(task_id, progress=15, status="TRAINING")
         best_config = run_hpo(
             train_data=train_data,
             val_data=test_data,
@@ -134,7 +148,7 @@ def run_training_task(task_id: str) -> None:
             models=models_filter,
             task_id=task_id,
         )
-        store.update_task(task_id, progress=50, best_config=best_config)
+        update_progress(task_id, progress=50, best_config=best_config)
 
         # --- TRAINING ---
         progress_cb = ProgressCallback(task_id, max_epochs=settings.MAX_EPOCHS, task_type=task_type)
@@ -237,7 +251,7 @@ def run_training_task(task_id: str) -> None:
             "training_time_seconds": round(training_time, 1),
         }
 
-        from datetime import datetime, timezone
+        # Final state → MongoDB (persistent)
         store.update_task(
             task_id,
             status="COMPLETED",
@@ -254,6 +268,9 @@ def run_training_task(task_id: str) -> None:
             completed_at=datetime.now(timezone.utc).isoformat(),
         )
 
+        # Clean up Redis progress
+        delete_progress(task_id)
+
         # Record training history for time estimation
         store.add_training_record({
             "num_nodes": dataset.get("num_nodes", 0),
@@ -267,5 +284,6 @@ def run_training_task(task_id: str) -> None:
 
     except Exception as e:
         store.update_task(task_id, status="FAILED", progress=0, error=str(e))
-        if task.get("project_id"):
+        delete_progress(task_id)
+        if task and task.get("project_id"):
             store.update_project(task["project_id"], status="failed")

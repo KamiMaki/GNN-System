@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import torch
 from typing import Optional
 
-from app.core import store
+from app.core.progress import update_progress
 from app.models.factory import get_model, MODEL_REGISTRY
 
 
@@ -81,12 +81,12 @@ def run_hpo(
         return float(val_loss)
 
     def trial_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-        """Called after each trial completes. Updates task progress."""
+        """Called after each trial completes. Updates progress via Redis."""
         if task_id:
             completed = trial.number + 1
             # Map HPO progress: 15% → 50%
             hpo_progress = 15 + int(completed / n_trials * 35)
-            store.update_task(
+            update_progress(
                 task_id,
                 current_trial=completed,
                 total_trials=n_trials,
