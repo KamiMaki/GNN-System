@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import torch
 from typing import Optional
 
-from app.core.progress import update_progress
+from app.core import store
 from app.models.factory import get_model, MODEL_REGISTRY
 
 
@@ -59,14 +59,8 @@ def run_hpo(
 
         model = get_model(model_name, **model_kwargs)
 
-        train_list = train_data if isinstance(train_data, list) else [train_data]
-        val_list = val_data if isinstance(val_data, list) else [val_data]
-
-        if sum(d.num_nodes for d in val_list) == 0:
-            val_list = train_list
-
-        train_loader = DataLoader(train_list, batch_size=len(train_list) or 32, shuffle=False)
-        val_loader = DataLoader(val_list, batch_size=len(val_list) or 32, shuffle=False)
+        train_loader = DataLoader([train_data], batch_size=1, shuffle=False)
+        val_loader = DataLoader([val_data], batch_size=1, shuffle=False)
 
         trainer = pl.Trainer(
             max_epochs=20,
@@ -81,12 +75,12 @@ def run_hpo(
         return float(val_loss)
 
     def trial_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-        """Called after each trial completes. Updates progress via Redis."""
+        """Called after each trial completes. Updates task progress."""
         if task_id:
             completed = trial.number + 1
             # Map HPO progress: 15% → 50%
             hpo_progress = 15 + int(completed / n_trials * 35)
-            update_progress(
+            store.update_task(
                 task_id,
                 current_trial=completed,
                 total_trials=n_trials,

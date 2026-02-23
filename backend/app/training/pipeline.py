@@ -1,5 +1,4 @@
 import time
-from datetime import datetime, timezone
 
 import numpy as np
 import torch
@@ -11,9 +10,7 @@ from sklearn.metrics import (
 )
 
 from app.core import store
-from app.core.artifacts import load_dataframe, load_pyg_data
 from app.core.config import settings
-from app.core.progress import update_progress, delete_progress
 from app.models.factory import get_model
 from app.training.optuna_search import run_hpo
 from app.training.callbacks import ProgressCallback
@@ -40,31 +37,30 @@ def _compute_regression_metrics(y_true, y_pred):
     }
 
 
-def _predict(model, loader, task_type):
-    """Run model inference on a DataLoader. Returns numpy arrays (preds/outputs, y_true)."""
+def _predict(model, data, task_type):
+    """Run model inference on a Data object. Returns numpy arrays (preds/outputs, y_true)."""
+    is_graph = task_type.startswith("graph")
     model.eval()
-    all_preds = []
-    all_y = []
     with torch.no_grad():
-        for batch in loader:
-            batch_tensor = batch.batch if hasattr(batch, "batch") else None
-            out = model(batch.x, batch.edge_index, batch.edge_attr, batch=batch_tensor)
-            if task_type.endswith("regression"):
-                preds = out.cpu().numpy()
-            else:
-                preds = out.argmax(dim=-1).cpu().numpy()
-            all_preds.append(preds)
-            all_y.append(batch.y.cpu().numpy())
-    return np.concatenate(all_preds), np.concatenate(all_y)
+        if is_graph:
+            batch_tensor = torch.zeros(data.x.size(0), dtype=torch.long)
+            out = model(data.x, data.edge_index, data.edge_attr, batch=batch_tensor)
+        else:
+            out = model(data.x, data.edge_index, data.edge_attr)
+
+    y_true = data.y.numpy()
+    if task_type.endswith("regression"):
+        y_pred = out.numpy()
+    else:
+        y_pred = out.argmax(dim=-1).numpy()
+    return y_pred, y_true
 
 
 def run_training_task(task_id: str) -> None:
-    """Celery worker entry point. Runs the full training pipeline."""
-    task = None
+    """Background thread entry point. Runs the full training pipeline."""
     try:
         task = store.get_task(task_id)
         dataset = store.get_dataset(task["dataset_id"])
-        dataset_id = task["dataset_id"]
         project_id = task.get("project_id")
         label_column = task.get("label_column")
         task_type = task.get("task_type", dataset.get("task_type", "node_classification"))
@@ -75,47 +71,36 @@ def run_training_task(task_id: str) -> None:
         store.update_task(task_id, device=device)
 
         # --- PREPROCESSING ---
-        update_progress(task_id, status="PREPROCESSING", progress=5)
-
-        # Load artifacts from disk
-        pyg_train = load_pyg_data(dataset_id, "pyg_train")
-        pyg_test = load_pyg_data(dataset_id, "pyg_test")
+        store.update_task(task_id, status="PREPROCESSING", progress=5)
 
         # Determine if we need dynamic or legacy PyG conversion
-        if label_column and pyg_train is None:
+        if label_column and "pyg_train" not in dataset:
             # Dynamic conversion (new project-based flow)
-            nodes_df_train = load_dataframe(dataset_id, "nodes_df_train")
-            edges_df_train = load_dataframe(dataset_id, "edges_df_train")
-            nodes_df_test = load_dataframe(dataset_id, "nodes_df_test")
-            edges_df_test = load_dataframe(dataset_id, "edges_df_test")
-
             train_data, scaler, feature_names = dataframes_to_pyg_dynamic(
-                nodes_df_train,
-                edges_df_train,
+                dataset["nodes_df_train"],
+                dataset["edges_df_train"],
                 label_column=label_column,
                 task_type=task_type,
                 fit_scaler=True,
             )
             test_data, _, _ = dataframes_to_pyg_dynamic(
-                nodes_df_test,
-                edges_df_test,
+                dataset["nodes_df_test"],
+                dataset["edges_df_test"],
                 label_column=label_column,
                 task_type=task_type,
                 scaler=scaler,
                 fit_scaler=False,
             )
             num_classes = getattr(train_data, "num_classes", 2)
-        elif pyg_train is not None:
-            # Pre-converted data loaded from artifacts
-            train_data = pyg_train
-            test_data = pyg_test
+        elif "pyg_train" in dataset:
+            # Legacy pre-converted data
+            train_data = dataset["pyg_train"]
+            test_data = dataset["pyg_test"]
             num_classes = dataset.get("num_classes", 2)
         else:
             raise ValueError("Dataset has no PyG data and no label_column specified")
 
-        # Get list property if single graph for seamless handling
-        train_x_shape = train_data[0].x.shape[1] if isinstance(train_data, list) else train_data.x.shape[1]
-        num_features = int(train_x_shape)
+        num_features = int(train_data.x.shape[1])
         is_regression = task_type.endswith("regression")
         is_classification = not is_regression
         if is_regression:
@@ -124,7 +109,7 @@ def run_training_task(task_id: str) -> None:
         # Class weights for imbalanced labels (classification only)
         class_weights = None
         if is_classification:
-            labels = train_data[0].y.numpy() if isinstance(train_data, list) else train_data.y.numpy()
+            labels = train_data.y.numpy()
             unique_labels = np.unique(labels)
             if len(unique_labels) == 2:
                 n_total = len(labels)
@@ -134,10 +119,10 @@ def run_training_task(task_id: str) -> None:
                 weight_pos = n_total / (2.0 * max(n_pos, 1))
                 class_weights = torch.tensor([weight_neg, weight_pos], dtype=torch.float)
 
-        update_progress(task_id, progress=10)
+        store.update_task(task_id, progress=10)
 
         # --- HPO ---
-        update_progress(task_id, progress=15, status="TRAINING")
+        store.update_task(task_id, progress=15, status="TRAINING")
         best_config = run_hpo(
             train_data=train_data,
             val_data=test_data,
@@ -148,7 +133,7 @@ def run_training_task(task_id: str) -> None:
             models=models_filter,
             task_id=task_id,
         )
-        update_progress(task_id, progress=50, best_config=best_config)
+        store.update_task(task_id, progress=50, best_config=best_config)
 
         # --- TRAINING ---
         progress_cb = ProgressCallback(task_id, max_epochs=settings.MAX_EPOCHS, task_type=task_type)
@@ -170,14 +155,8 @@ def run_training_task(task_id: str) -> None:
 
         model = get_model(best_config["model_name"], **model_kwargs)
 
-        train_list = train_data if isinstance(train_data, list) else [train_data]
-        val_list = test_data if isinstance(test_data, list) else [test_data]
-
-        if sum(d.num_nodes for d in val_list) == 0:
-            val_list = train_list
-
-        train_loader = DataLoader(train_list, batch_size=len(train_list) or 32, shuffle=False)
-        val_loader = DataLoader(val_list, batch_size=len(val_list) or 32, shuffle=False)
+        train_loader = DataLoader([train_data], batch_size=1, shuffle=False)
+        val_loader = DataLoader([test_data], batch_size=1, shuffle=False)
 
         trainer = pl.Trainer(
             max_epochs=settings.MAX_EPOCHS,
@@ -192,8 +171,8 @@ def run_training_task(task_id: str) -> None:
         training_time = time.time() - t_start
 
         # --- EVALUATION ---
-        train_preds, train_y_true = _predict(model, train_loader, task_type)
-        test_preds, test_y_true = _predict(model, val_loader, task_type)
+        train_preds, train_y_true = _predict(model, train_data, task_type)
+        test_preds, test_y_true = _predict(model, test_data, task_type)
 
         if is_regression:
             train_metrics = _compute_regression_metrics(train_y_true, train_preds)
@@ -251,7 +230,7 @@ def run_training_task(task_id: str) -> None:
             "training_time_seconds": round(training_time, 1),
         }
 
-        # Final state → MongoDB (persistent)
+        from datetime import datetime, timezone
         store.update_task(
             task_id,
             status="COMPLETED",
@@ -268,9 +247,6 @@ def run_training_task(task_id: str) -> None:
             completed_at=datetime.now(timezone.utc).isoformat(),
         )
 
-        # Clean up Redis progress
-        delete_progress(task_id)
-
         # Record training history for time estimation
         store.add_training_record({
             "num_nodes": dataset.get("num_nodes", 0),
@@ -284,6 +260,5 @@ def run_training_task(task_id: str) -> None:
 
     except Exception as e:
         store.update_task(task_id, status="FAILED", progress=0, error=str(e))
-        delete_progress(task_id)
-        if task and task.get("project_id"):
+        if task.get("project_id"):
             store.update_project(task["project_id"], status="failed")

@@ -18,17 +18,5 @@ class Settings(BaseSettings):
     LABEL_COLUMN: str = "is_critical"
     REGRESSION_LABEL: str = "congestion_score"
 
-    # MongoDB
-    MONGO_URI: str = "mongodb://localhost:27017"
-    MONGO_DB: str = "layoutxpert"
-
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
-    REDIS_PROGRESS_DB: int = 2
-
-    # Celery
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
-
 
 settings = Settings()

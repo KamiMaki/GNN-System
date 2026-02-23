@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.core import store
 from app.schemas.api_models import (
@@ -8,13 +8,13 @@ from app.schemas.api_models import (
     Report,
     TaskStatus,
 )
-from app.training.celery_tasks import run_training_celery
+from app.training.pipeline import run_training_task
 
 router = APIRouter()
 
 
 @router.post("/tasks", response_model=TaskStatus)
-async def create_task(body: CreateTaskRequest):
+async def create_task(body: CreateTaskRequest, background_tasks: BackgroundTasks):
     """Create a training task (legacy endpoint). Returns immediately with QUEUED status."""
     dataset = store.get_dataset(body.dataset_id)
     if not dataset:
@@ -34,7 +34,7 @@ async def create_task(body: CreateTaskRequest):
     }
     store.put_task(task_id, task_record)
 
-    run_training_celery.delay(task_id)
+    background_tasks.add_task(run_training_task, task_id)
 
     return TaskStatus(task_id=task_id, status="QUEUED", progress=0)
 
@@ -42,19 +42,20 @@ async def create_task(body: CreateTaskRequest):
 @router.get("/tasks", response_model=list[TaskStatus])
 async def list_tasks():
     """List all tasks."""
-    return [
-        TaskStatus(
-            task_id=t.get("task_id", t.get("_id")),
-            status=t["status"],
-            progress=t["progress"],
-            current_trial=t.get("current_trial"),
-            total_trials=t.get("total_trials"),
-            device=t.get("device"),
-            results=t.get("results"),
-            best_config=t.get("best_config"),
-        )
-        for t in store.list_tasks()
-    ]
+    with store._lock:
+        return [
+            TaskStatus(
+                task_id=t["task_id"],
+                status=t["status"],
+                progress=t["progress"],
+                current_trial=t.get("current_trial"),
+                total_trials=t.get("total_trials"),
+                device=t.get("device"),
+                results=t.get("results"),
+                best_config=t.get("best_config"),
+            )
+            for t in store.tasks.values()
+        ]
 
 
 @router.get("/tasks/{task_id}", response_model=TaskStatus)
@@ -64,7 +65,7 @@ async def get_task(task_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return TaskStatus(
-        task_id=task.get("task_id", task.get("_id")),
+        task_id=task["task_id"],
         status=task["status"],
         progress=task["progress"],
         current_trial=task.get("current_trial"),

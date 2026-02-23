@@ -116,11 +116,14 @@ def generate_edges(nodes: list[dict], avg_per_node: int, rng: random.Random,
             wire_length_um = round(rng.uniform(5.0, 500.0), 2)
             wire_cap_ff = round(wire_length_um * rng.uniform(0.08, 0.25), 2)
 
+            edge_critical = 1 if (src in critical_set and dst in critical_set) else 0
+
             edge = {
                 "src_id": src,
                 "dst_id": dst,
                 "wire_cap_ff": wire_cap_ff,
                 "wire_length_um": wire_length_um,
+                "is_critical": edge_critical,
             }
 
             if extra_edge_attrs:
@@ -155,7 +158,7 @@ NODE_FIELDS = [
     "slack_ns", "cell_delay_ps", "drive_strength", "cell_area_um2",
     "congestion_score", "is_critical",
 ]
-EDGE_FIELDS = ["src_id", "dst_id", "wire_cap_ff", "wire_length_um"]
+EDGE_FIELDS = ["src_id", "dst_id", "wire_cap_ff", "wire_length_um", "is_critical"]
 EDGE_FIELDS_EXTRA = EDGE_FIELDS + ["routing_layer", "resistance_ohm", "coupling_cap_ff"]
 
 
@@ -244,12 +247,10 @@ def main():
     train_edges = generate_edges(train_nodes, 6, rng)
     test_edges = generate_edges(test_nodes, 6, rng)
 
-    edge_fields_orig = ["src_id", "dst_id", "wire_cap_ff", "wire_length_um"]
-
     write_csv(OUT_DIR / "nodes_train.csv", NODE_FIELDS, train_nodes)
     write_csv(OUT_DIR / "nodes_test.csv", NODE_FIELDS, test_nodes)
-    write_csv(OUT_DIR / "edges_train.csv", edge_fields_orig, train_edges)
-    write_csv(OUT_DIR / "edges_test.csv", edge_fields_orig, test_edges)
+    write_csv(OUT_DIR / "edges_train.csv", EDGE_FIELDS, train_edges)
+    write_csv(OUT_DIR / "edges_test.csv", EDGE_FIELDS, test_edges)
 
     tc = sum(1 for n in train_nodes if n["is_critical"] == 1)
     print(f"  Train: {len(train_nodes)} nodes ({tc} critical), {len(train_edges)} edges")

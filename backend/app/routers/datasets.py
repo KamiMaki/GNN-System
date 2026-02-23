@@ -4,21 +4,12 @@ import torch
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core import store
-from app.core.artifacts import save_dataset_artifacts
 from app.data.feature_engineering import compute_explore_stats
 from app.data.ingestion import parse_csv_pair
 from app.data.pyg_converter import dataframes_to_pyg
 from app.schemas.api_models import DatasetSummary, ExploreData
 
 router = APIRouter()
-
-# Keys that must be saved as file artifacts (not stored in MongoDB)
-_ARTIFACT_KEYS = (
-    "pyg_train", "pyg_test", "scaler",
-    "nodes_df_train", "nodes_df_test",
-    "edges_df_train", "edges_df_test",
-    "nodes_df", "edges_df",
-)
 
 
 @router.post("/upload", response_model=DatasetSummary)
@@ -109,20 +100,6 @@ async def upload_dataset(
             total_edges = len(edges_df)
 
         dataset_id = str(uuid.uuid4())
-
-        # Save non-serializable artifacts to disk
-        artifact_data = {
-            "pyg_train": pyg_train,
-            "pyg_test": pyg_test,
-            "scaler": scaler,
-            "nodes_df_train": nodes_df_train,
-            "nodes_df_test": nodes_df_test,
-            "edges_df_train": edges_df_train,
-            "edges_df_test": edges_df_test,
-        }
-        artifact_path = save_dataset_artifacts(dataset_id, artifact_data)
-
-        # Store metadata only in MongoDB
         record = {
             "dataset_id": dataset_id,
             "name": name,
@@ -132,8 +109,14 @@ async def upload_dataset(
             "num_classes": num_classes,
             "is_directed": True,
             "task_type": task_type,
+            "pyg_train": pyg_train,
+            "pyg_test": pyg_test,
+            "scaler": scaler,
+            "nodes_df_train": nodes_df_train,
+            "nodes_df_test": nodes_df_test,
+            "edges_df_train": edges_df_train,
+            "edges_df_test": edges_df_test,
             "explore_stats": explore_stats,
-            "artifact_path": artifact_path,
         }
         store.put_dataset(dataset_id, record)
 
@@ -154,19 +137,20 @@ async def upload_dataset(
 @router.get("/datasets", response_model=list[DatasetSummary])
 async def list_datasets():
     """List all datasets."""
-    return [
-        DatasetSummary(
-            dataset_id=d.get("dataset_id", d.get("_id")),
-            name=d["name"],
-            num_nodes=d["num_nodes"],
-            num_edges=d["num_edges"],
-            num_features=d["num_features"],
-            num_classes=d["num_classes"],
-            is_directed=d["is_directed"],
-            task_type=d.get("task_type", "node_classification"),
-        )
-        for d in store.list_datasets()
-    ]
+    with store._lock:
+        return [
+            DatasetSummary(
+                dataset_id=d["dataset_id"],
+                name=d["name"],
+                num_nodes=d["num_nodes"],
+                num_edges=d["num_edges"],
+                num_features=d["num_features"],
+                num_classes=d["num_classes"],
+                is_directed=d["is_directed"],
+                task_type=d.get("task_type", "node_classification"),
+            )
+            for d in store.datasets.values()
+        ]
 
 
 @router.get("/datasets/{dataset_id}/explore", response_model=ExploreData)

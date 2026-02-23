@@ -1,9 +1,9 @@
 import pytorch_lightning as pl
-from app.core.progress import update_progress
+from app.core import store
 
 
 class ProgressCallback(pl.Callback):
-    """Updates Redis progress after each epoch with progress and history."""
+    """Updates the task store after each epoch with progress and history."""
 
     def __init__(self, task_id: str, max_epochs: int, task_type: str = "node_classification"):
         self.task_id = task_id
@@ -31,7 +31,7 @@ class ProgressCallback(pl.Callback):
         }
         self.history.append(entry)
 
-        update_progress(
+        store.update_task(
             self.task_id,
             progress=min(50 + int(progress * 0.49), 99),  # Map 0-100% training to 50-99% overall
             status="TRAINING",
