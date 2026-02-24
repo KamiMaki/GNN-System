@@ -358,7 +358,7 @@ export default function TrainPage() {
                                     overflowY: 'auto',
                                     fontFamily: 'monospace',
                                     fontSize: 13,
-                                    background: '#141414',
+                                    background: '#fafafa',
                                 }}
                             >
                                 {logs.length === 0 ? (

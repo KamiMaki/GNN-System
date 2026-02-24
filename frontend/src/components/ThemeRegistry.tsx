@@ -6,7 +6,7 @@ import { getTheme } from '@/theme/theme';
 import { ColorModeContext } from '@/contexts/ColorModeContext';
 
 export default function ThemeRegistry({ children }: { children: React.ReactNode }) {
-  const [mode, setMode] = React.useState<'light' | 'dark'>('dark');
+  const [mode, setMode] = React.useState<'light' | 'dark'>('light');
 
   const colorMode = React.useMemo(
     () => ({

@@ -91,7 +91,7 @@ export default function DocumentationPage() {
                     <Paragraph>
                         The platform exposes RESTful endpoints for automated pipeline integration.
                     </Paragraph>
-                    <Card size="small" style={{ fontFamily: 'monospace', background: '#141414' }}>
+                    <Card size="small" style={{ fontFamily: 'monospace', background: '#fafafa' }}>
                         <div style={{ color: '#1677ff' }}>POST /api/v1/jobs/submit</div>
                         <div style={{ color: '#8c8c8c', fontSize: 13, marginBottom: 12 }}>Submit a new training or inference job.</div>
 
