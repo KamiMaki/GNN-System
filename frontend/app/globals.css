@@ -1,63 +1,7 @@
-/* globals.css */
-
-/* 定義科技感變數 */
-:root {
-  --background-start: #0f172a; /* 深藍黑 */
-  --background-end: #1e293b;   /* 稍淺的深藍 */
-  --neon-primary: #00f2ff;      /* 賽博龐克藍 */
-  --neon-secondary: #7000ff;    /* 霓虹紫 */
-  --glass-bg: rgba(255, 255, 255, 0.03);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-}
-
 body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
-  /* 動態深色漸層背景 */
-  background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 100%);
-  color: var(--text-primary);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   min-height: 100vh;
-}
-
-/* 玻璃擬態通用類別 */
-.glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-}
-
-/* 動畫定義 */
-@keyframes gradient-text {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-@keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-  100% { transform: translateY(0px); }
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulseGlowBorder {
-  0% { border-color: rgba(0, 242, 255, 0.1); box-shadow: 0 0 0px rgba(0, 242, 255, 0); }
-  50% { border-color: rgba(0, 242, 255, 0.5); box-shadow: 0 0 20px rgba(0, 242, 255, 0.2); }
-  100% { border-color: rgba(0, 242, 255, 0.1); box-shadow: 0 0 0px rgba(0, 242, 255, 0); }
 }

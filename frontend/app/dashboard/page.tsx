@@ -2,61 +2,29 @@
 
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import Box from '@mui/material/Box';
-import Container from '@mui/material/Container';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
-import TextField from '@mui/material/TextField';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import CardActionArea from '@mui/material/CardActionArea';
-import Chip from '@mui/material/Chip';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import Stack from '@mui/material/Stack';
-import InputAdornment from '@mui/material/InputAdornment';
-import IconButton from '@mui/material/IconButton';
-import CircularProgress from '@mui/material/CircularProgress';
-import Fade from '@mui/material/Fade';
-
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
-import Divider from '@mui/material/Divider';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import Avatar from '@mui/material/Avatar';
-
-import AddIcon from '@mui/icons-material/Add';
-import SearchIcon from '@mui/icons-material/Search';
-import FolderIcon from '@mui/icons-material/Folder';
-import MemoryIcon from '@mui/icons-material/Memory';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import PersonIcon from '@mui/icons-material/Person';
-import SettingsIcon from '@mui/icons-material/Settings';
-import LogoutIcon from '@mui/icons-material/Logout';
+import {
+    Button, Input, Card, Tag, Modal, Space, Spin, Avatar, Dropdown, Divider, Row, Col, Typography, Empty,
+} from 'antd';
+import {
+    PlusOutlined, SearchOutlined, FolderOutlined, AppstoreOutlined,
+    DeleteOutlined, UserOutlined, SettingOutlined, LogoutOutlined,
+} from '@ant-design/icons';
 
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { deleteProject, ProjectSummary } from '@/lib/api';
 
-const COLORS = {
-    bg: '#020617',
-    cyan: '#06b6d4',
-    teal: '#14b8a6',
-    glass: 'rgba(15, 23, 42, 0.4)',
-    glassBorder: 'rgba(255, 255, 255, 0.08)',
-};
+const { Title, Text } = Typography;
 
 const STEP_LABELS = ['Upload', 'Analysis', 'Training', 'Evaluation'];
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-    created: { bg: 'rgba(148, 163, 184, 0.15)', text: '#94a3b8' },
-    data_uploaded: { bg: 'rgba(59, 130, 246, 0.15)', text: '#3b82f6' },
-    data_confirmed: { bg: 'rgba(139, 92, 246, 0.15)', text: '#8b5cf6' },
-    training: { bg: 'rgba(6, 182, 212, 0.15)', text: '#06b6d4' },
-    completed: { bg: 'rgba(34, 197, 94, 0.15)', text: '#22c55e' },
-    failed: { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444' },
+const STATUS_TAG_COLOR: Record<string, string> = {
+    created: 'default',
+    data_uploaded: 'blue',
+    data_confirmed: 'purple',
+    training: 'processing',
+    completed: 'green',
+    failed: 'red',
 };
 
 function getStepPath(project: ProjectSummary): string {
@@ -73,7 +41,6 @@ export default function DashboardPage() {
     const router = useRouter();
     const { projects, loading, createNewProject, refreshProjects } = useProject();
     const { user, logout } = useAuth();
-    const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
 
     const [search, setSearch] = useState('');
     const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -83,14 +50,12 @@ export default function DashboardPage() {
     const [tagInput, setTagInput] = useState('');
     const [creating, setCreating] = useState(false);
 
-    // Collect all unique tags
     const allTags = useMemo(() => {
         const tags = new Set<string>();
         projects.forEach(p => p.tags?.forEach(t => tags.add(t)));
         return Array.from(tags).sort();
     }, [projects]);
 
-    // Filter projects
     const filtered = useMemo(() => {
         let result = projects;
         if (search) {
@@ -141,289 +106,198 @@ export default function DashboardPage() {
         }
     };
 
+    const userMenuItems = user ? {
+        items: [
+            { key: 'header', label: <div><div style={{ fontWeight: 700 }}>{user.name}</div><div style={{ fontSize: 12, opacity: 0.6 }}>{user.email}</div></div>, disabled: true },
+            { type: 'divider' as const },
+            { key: 'profile', label: 'Profile', icon: <UserOutlined /> },
+            { key: 'settings', label: 'Settings', icon: <SettingOutlined /> },
+            { type: 'divider' as const },
+            { key: 'logout', label: 'Logout', icon: <LogoutOutlined />, danger: true },
+        ],
+        onClick: ({ key }: { key: string }) => {
+            if (key === 'logout') logout();
+        },
+    } : { items: [] };
+
     return (
-        <Box sx={{ minHeight: '100vh', bgcolor: COLORS.bg, color: '#fff' }}>
+        <div>
             {/* Header */}
-            <Box sx={{
-                py: 2, px: 3,
-                background: COLORS.glass,
-                backdropFilter: 'blur(20px)',
-                borderBottom: `1px solid ${COLORS.glassBorder}`,
+            <div style={{
+                padding: '16px 24px',
+                borderBottom: '1px solid rgba(0,0,0,0.06)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 2,
+                gap: 16,
             }}>
                 <Button
+                    type="text"
+                    icon={<AppstoreOutlined />}
                     onClick={() => router.push('/dashboard')}
-                    startIcon={<MemoryIcon />}
-                    sx={{
-                        color: '#fff',
-                        textTransform: 'none',
-                        fontWeight: 800,
-                        fontSize: '1rem',
-                        letterSpacing: '-0.02em',
-                        '&:hover': { bgcolor: 'rgba(6, 182, 212, 0.1)' },
-                        '& .MuiButton-startIcon': { color: COLORS.cyan },
-                    }}
+                    style={{ fontWeight: 800, fontSize: '1rem' }}
                 >
                     LayoutXpert
                 </Button>
-                <Typography variant="body2" sx={{ color: '#64748b', ml: 1 }}>
-                    PROJECT WORKSPACE
-                </Typography>
-                <Box sx={{ flex: 1 }} />
+                <Text type="secondary">PROJECT WORKSPACE</Text>
+                <div style={{ flex: 1 }} />
                 {user && (
-                    <>
-                        <Button
-                            onClick={(e) => setUserMenuAnchor(e.currentTarget)}
-                            sx={{ minWidth: 0, p: 0.5, borderRadius: '50%' }}
-                        >
-                            <Avatar
-                                src={user.avatar}
-                                alt={user.name}
-                                sx={{ width: 32, height: 32, border: `2px solid ${COLORS.glassBorder}` }}
-                            />
-                        </Button>
-                        <Menu
-                            anchorEl={userMenuAnchor}
-                            open={Boolean(userMenuAnchor)}
-                            onClose={() => setUserMenuAnchor(null)}
-                            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-                            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-                            slotProps={{
-                                paper: {
-                                    sx: {
-                                        bgcolor: '#0f172a',
-                                        border: `1px solid ${COLORS.glassBorder}`,
-                                        backdropFilter: 'blur(20px)',
-                                        mt: 1,
-                                        minWidth: 200,
-                                    },
-                                },
-                            }}
-                        >
-                            <Box sx={{ px: 2, py: 1.5 }}>
-                                <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>{user.name}</Typography>
-                                <Typography sx={{ color: '#64748b', fontSize: '0.75rem' }}>{user.email}</Typography>
-                            </Box>
-                            <Divider sx={{ borderColor: COLORS.glassBorder }} />
-                            <MenuItem onClick={() => setUserMenuAnchor(null)} sx={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-                                <ListItemIcon><PersonIcon sx={{ color: '#64748b', fontSize: 18 }} /></ListItemIcon>
-                                Profile
-                            </MenuItem>
-                            <MenuItem onClick={() => setUserMenuAnchor(null)} sx={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-                                <ListItemIcon><SettingsIcon sx={{ color: '#64748b', fontSize: 18 }} /></ListItemIcon>
-                                Settings
-                            </MenuItem>
-                            <Divider sx={{ borderColor: COLORS.glassBorder }} />
-                            <MenuItem onClick={() => { setUserMenuAnchor(null); logout(); }} sx={{ color: '#ef4444', fontSize: '0.85rem' }}>
-                                <ListItemIcon><LogoutIcon sx={{ color: '#ef4444', fontSize: 18 }} /></ListItemIcon>
-                                Logout
-                            </MenuItem>
-                        </Menu>
-                    </>
+                    <Dropdown menu={userMenuItems} trigger={['click']} placement="bottomRight">
+                        <Avatar
+                            src={user.avatar}
+                            alt={user.name}
+                            size={32}
+                            style={{ cursor: 'pointer' }}
+                            icon={<UserOutlined />}
+                        />
+                    </Dropdown>
                 )}
-            </Box>
+            </div>
 
-            <Container maxWidth="lg" sx={{ py: 4 }}>
+            <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
                 {/* Toolbar */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 4 }}>
-                    <TextField
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+                    <Input
                         placeholder="Search projects..."
-                        size="small"
+                        prefix={<SearchOutlined />}
                         value={search}
                         onChange={e => setSearch(e.target.value)}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <SearchIcon sx={{ color: '#64748b' }} />
-                                </InputAdornment>
-                            ),
-                        }}
-                        sx={{
-                            flex: 1, maxWidth: 400,
-                            '& .MuiOutlinedInput-root': {
-                                color: '#fff',
-                                bgcolor: 'rgba(15, 23, 42, 0.6)',
-                                '& fieldset': { borderColor: COLORS.glassBorder },
-                                '&:hover fieldset': { borderColor: '#475569' },
-                                '&.Mui-focused fieldset': { borderColor: COLORS.cyan },
-                            },
-                        }}
+                        style={{ maxWidth: 400, flex: 1 }}
                     />
 
-                    {/* Tag filter chips */}
-                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: 1 }}>
                         {tagFilter && (
-                            <Chip
-                                label={`Tag: ${tagFilter}`}
-                                onDelete={() => setTagFilter(null)}
-                                size="small"
-                                sx={{ bgcolor: 'rgba(6, 182, 212, 0.15)', color: COLORS.cyan }}
-                            />
+                            <Tag closable onClose={() => setTagFilter(null)} color="blue">
+                                Tag: {tagFilter}
+                            </Tag>
                         )}
                         {allTags.slice(0, 8).map(tag => (
-                            <Chip
+                            <Tag
                                 key={tag}
-                                label={tag}
-                                size="small"
-                                variant={tagFilter === tag ? 'filled' : 'outlined'}
+                                color={tagFilter === tag ? 'blue' : undefined}
+                                style={{ cursor: 'pointer' }}
                                 onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-                                sx={{
-                                    borderColor: COLORS.glassBorder,
-                                    color: tagFilter === tag ? COLORS.cyan : '#94a3b8',
-                                    bgcolor: tagFilter === tag ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
-                                    '&:hover': { borderColor: '#475569' },
-                                }}
-                            />
+                            >
+                                {tag}
+                            </Tag>
                         ))}
-                    </Box>
+                    </div>
 
                     <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
+                        type="primary"
+                        icon={<PlusOutlined />}
                         onClick={() => setDialogOpen(true)}
-                        sx={{
-                            bgcolor: COLORS.cyan,
-                            fontWeight: 700,
-                            borderRadius: 2,
-                            '&:hover': { bgcolor: COLORS.teal },
-                        }}
                     >
                         New Project
                     </Button>
-                </Box>
+                </div>
 
                 {/* Project Grid */}
                 {loading && projects.length === 0 ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-                        <CircularProgress sx={{ color: COLORS.cyan }} />
-                    </Box>
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
+                        <Spin size="large" />
+                    </div>
                 ) : filtered.length === 0 ? (
-                    <Box sx={{ textAlign: 'center', py: 8 }}>
-                        <FolderIcon sx={{ fontSize: 64, color: '#334155', mb: 2 }} />
-                        <Typography variant="h6" sx={{ color: '#64748b' }}>
-                            {projects.length === 0 ? 'No projects yet' : 'No matching projects'}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: '#475569', mt: 1 }}>
-                            {projects.length === 0 ? 'Create your first project to get started.' : 'Try adjusting your search or filters.'}
-                        </Typography>
-                    </Box>
+                    <Empty
+                        image={<FolderOutlined style={{ fontSize: 64, opacity: 0.3 }} />}
+                        description={
+                            <Space direction="vertical" size={4}>
+                                <Text type="secondary">
+                                    {projects.length === 0 ? 'No projects yet' : 'No matching projects'}
+                                </Text>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {projects.length === 0 ? 'Create your first project to get started.' : 'Try adjusting your search or filters.'}
+                                </Text>
+                            </Space>
+                        }
+                    />
                 ) : (
-                    <Box sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(3, 1fr)' },
-                        gap: 3,
-                    }}>
-                        {filtered.map((project) => {
-                            const sc = STATUS_COLORS[project.status] || STATUS_COLORS.created;
-                            return (
-                                <Fade in key={project.project_id} timeout={300}>
-                                    <Card sx={{
-                                        bgcolor: COLORS.glass,
-                                        backdropFilter: 'blur(20px)',
-                                        border: `1px solid ${COLORS.glassBorder}`,
-                                        borderRadius: 3,
-                                        transition: 'all 0.3s',
-                                        '&:hover': {
-                                            borderColor: COLORS.cyan + '40',
-                                            transform: 'translateY(-2px)',
-                                            boxShadow: `0 8px 30px rgba(6, 182, 212, 0.1)`,
-                                        },
-                                    }}>
-                                        <CardActionArea onClick={() => router.push(getStepPath(project))}>
-                                            <CardContent sx={{ p: 3 }}>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                                                    <Typography variant="h6" sx={{ color: '#fff', fontWeight: 700, fontSize: '1rem' }} noWrap>
-                                                        {project.name}
-                                                    </Typography>
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={(e) => handleDelete(e, project.project_id)}
-                                                        sx={{ color: '#475569', '&:hover': { color: '#ef4444' } }}
-                                                    >
-                                                        <DeleteOutlineIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Box>
+                    <Row gutter={[24, 24]}>
+                        {filtered.map((project) => (
+                            <Col xs={24} sm={12} md={8} key={project.project_id}>
+                                <Card
+                                    hoverable
+                                    onClick={() => router.push(getStepPath(project))}
+                                    styles={{ body: { padding: 20 } }}
+                                    extra={
+                                        <Button
+                                            type="text"
+                                            danger
+                                            size="small"
+                                            icon={<DeleteOutlined />}
+                                            onClick={(e) => handleDelete(e, project.project_id)}
+                                        />
+                                    }
+                                    title={<Text strong ellipsis style={{ maxWidth: 200 }}>{project.name}</Text>}
+                                >
+                                    {/* Tags */}
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12, minHeight: 24 }}>
+                                        {project.tags?.slice(0, 3).map(tag => (
+                                            <Tag key={tag}>{tag}</Tag>
+                                        ))}
+                                    </div>
 
-                                                {/* Tags */}
-                                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 2, minHeight: 24 }}>
-                                                    {project.tags?.slice(0, 3).map(tag => (
-                                                        <Chip key={tag} label={tag} size="small"
-                                                            sx={{ fontSize: '0.65rem', height: 20, bgcolor: 'rgba(148, 163, 184, 0.1)', color: '#94a3b8', border: 'none' }}
-                                                        />
-                                                    ))}
-                                                </Box>
+                                    {/* Status & Date */}
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                        <Tag color={STATUS_TAG_COLOR[project.status] || 'default'}>
+                                            {project.status.replace('_', ' ').toUpperCase()}
+                                        </Tag>
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                            {new Date(project.created_at).toLocaleDateString()}
+                                        </Text>
+                                    </div>
 
-                                                {/* Status & Date */}
-                                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                    <Chip
-                                                        label={project.status.replace('_', ' ').toUpperCase()}
-                                                        size="small"
-                                                        sx={{ fontSize: '0.65rem', height: 22, bgcolor: sc.bg, color: sc.text, fontWeight: 600 }}
-                                                    />
-                                                    <Typography variant="caption" sx={{ color: '#64748b' }}>
-                                                        {new Date(project.created_at).toLocaleDateString()}
-                                                    </Typography>
-                                                </Box>
-
-                                                {/* Step progress */}
-                                                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                                    {STEP_LABELS.map((label, i) => (
-                                                        <Box key={label} sx={{ flex: 1, textAlign: 'center' }}>
-                                                            <Box sx={{
-                                                                height: 3, borderRadius: 1, mb: 0.5,
-                                                                bgcolor: i < project.current_step
-                                                                    ? (project.status === 'completed' ? COLORS.teal : COLORS.cyan)
-                                                                    : '#1e293b',
-                                                            }} />
-                                                            <Typography variant="caption"
-                                                                sx={{ fontSize: '0.55rem', color: i < project.current_step ? '#94a3b8' : '#334155' }}>
-                                                                {label}
-                                                            </Typography>
-                                                        </Box>
-                                                    ))}
-                                                </Box>
-                                            </CardContent>
-                                        </CardActionArea>
-                                    </Card>
-                                </Fade>
-                            );
-                        })}
-                    </Box>
+                                    {/* Step progress */}
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {STEP_LABELS.map((label, i) => (
+                                            <div key={label} style={{ flex: 1, textAlign: 'center' }}>
+                                                <div style={{
+                                                    height: 3, borderRadius: 2, marginBottom: 4,
+                                                    background: i < project.current_step ? '#1677ff' : '#f0f0f0',
+                                                }} />
+                                                <Text type="secondary" style={{ fontSize: 10 }}>{label}</Text>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </Card>
+                            </Col>
+                        ))}
+                    </Row>
                 )}
-            </Container>
+            </div>
 
-            {/* Create Project Dialog */}
-            <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth
-                PaperProps={{ sx: { bgcolor: '#0f172a', border: `1px solid ${COLORS.glassBorder}`, borderRadius: 3, color: '#fff' } }}>
-                <DialogTitle sx={{ fontWeight: 700, color: COLORS.cyan }}>Create New Project</DialogTitle>
-                <DialogContent>
-                    <Stack spacing={3} sx={{ mt: 1 }}>
-                        <TextField label="Project Name" fullWidth value={newName} onChange={e => setNewName(e.target.value)} autoFocus
-                            sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: COLORS.glassBorder }, '&:hover fieldset': { borderColor: '#475569' }, '&.Mui-focused fieldset': { borderColor: COLORS.cyan } }, '& .MuiInputLabel-root': { color: '#64748b' } }} />
-                        <Box>
-                            <TextField label="Add Tags" size="small" value={tagInput} onChange={e => setTagInput(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleTagAdd(); } }}
-                                placeholder="Press Enter to add" fullWidth
-                                sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: COLORS.glassBorder }, '&:hover fieldset': { borderColor: '#475569' }, '&.Mui-focused fieldset': { borderColor: COLORS.cyan } }, '& .MuiInputLabel-root': { color: '#64748b' } }} />
-                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 1 }}>
-                                {newTags.map(tag => (
-                                    <Chip key={tag} label={tag} size="small" onDelete={() => setNewTags(newTags.filter(t => t !== tag))}
-                                        sx={{ bgcolor: 'rgba(6, 182, 212, 0.15)', color: COLORS.cyan }} />
-                                ))}
-                            </Box>
-                        </Box>
-                    </Stack>
-                </DialogContent>
-                <DialogActions sx={{ px: 3, pb: 3 }}>
-                    <Button onClick={() => setDialogOpen(false)} sx={{ color: '#94a3b8' }}>Cancel</Button>
-                    <Button variant="contained" onClick={handleCreate} disabled={!newName.trim() || creating}
-                        sx={{ bgcolor: COLORS.cyan, fontWeight: 700, '&:hover': { bgcolor: COLORS.teal } }}>
-                        {creating ? <CircularProgress size={20} /> : 'Create'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-        </Box>
+            {/* Create Project Modal */}
+            <Modal
+                title="Create New Project"
+                open={dialogOpen}
+                onCancel={() => setDialogOpen(false)}
+                onOk={handleCreate}
+                okText={creating ? 'Creating...' : 'Create'}
+                okButtonProps={{ disabled: !newName.trim() || creating, loading: creating }}
+            >
+                <Space direction="vertical" size="middle" style={{ width: '100%', marginTop: 16 }}>
+                    <Input
+                        placeholder="Project Name"
+                        value={newName}
+                        onChange={e => setNewName(e.target.value)}
+                        autoFocus
+                    />
+                    <div>
+                        <Input
+                            placeholder="Add Tags (press Enter)"
+                            value={tagInput}
+                            onChange={e => setTagInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleTagAdd(); } }}
+                        />
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+                            {newTags.map(tag => (
+                                <Tag key={tag} closable onClose={() => setNewTags(newTags.filter(t => t !== tag))} color="blue">
+                                    {tag}
+                                </Tag>
+                            ))}
+                        </div>
+                    </div>
+                </Space>
+            </Modal>
+        </div>
     );
 }

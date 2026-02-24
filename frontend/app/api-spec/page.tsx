@@ -2,15 +2,15 @@ import React from 'react';
 
 export default function ApiSpecPage() {
     return (
-        <div className="w-full h-screen flex flex-col">
-            <div className="p-4 bg-gray-900 text-white shadow-md">
-                <h1 className="text-2xl font-bold">Backend API Specification</h1>
-                <p className="text-sm text-gray-400">Powered by FastAPI & Swagger UI</p>
+        <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: 16 }}>
+                <h3 style={{ margin: 0 }}>Backend API Specification</h3>
+                <p style={{ margin: '4px 0 0', opacity: 0.6, fontSize: 14 }}>Powered by FastAPI & Swagger UI</p>
             </div>
-            <div className="flex-grow">
+            <div style={{ flex: 1 }}>
                 <iframe
                     src="http://localhost:8000/docs"
-                    className="w-full h-full border-none"
+                    style={{ width: '100%', height: '100%', border: 'none' }}
                     title="API Docs"
                 />
             </div>

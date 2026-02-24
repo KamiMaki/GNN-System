@@ -1,7 +1,5 @@
-// layout.tsx
 import type { Metadata } from "next";
 import ClientProviders from "@/components/ClientProviders";
-import Box from "@mui/material/Box";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,16 +16,9 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <ClientProviders>
-          <Box
-            component="main"
-            sx={{
-              minHeight: '100vh',
-              background: 'transparent',
-              position: 'relative',
-            }}
-          >
+          <main style={{ minHeight: '100vh' }}>
             {children}
-          </Box>
+          </main>
         </ClientProviders>
       </body>
     </html>

@@ -1,122 +1,111 @@
-// app/docs/page.tsx
 'use client';
 
-import { Box, Typography, Container, Paper, Stack, Breadcrumbs, Link as MuiLink, Divider } from '@mui/material';
-import NavigateNextIcon from '@mui/icons-material/NavigateNext';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
-import ArchitectureIcon from '@mui/icons-material/Architecture';
-import BuildIcon from '@mui/icons-material/Build'; // For Tool/Setup
-import ScienceIcon from '@mui/icons-material/Science'; // For Research/Methodology
+import { Card, Breadcrumb, Divider, Typography, Space } from 'antd';
+import { ReadOutlined, ClusterOutlined, ToolOutlined, ExperimentOutlined } from '@ant-design/icons';
 
-const COLORS = {
-    bg: '#0f172a',
-    primary: '#06b6d4', // Cyan
-    secondary: '#3b82f6', // Blue
-    textSecondary: '#94a3b8',
-    glass: 'rgba(30, 41, 59, 0.6)',
-    glassBorder: 'rgba(255, 255, 255, 0.08)'
-};
+const { Title, Paragraph, Text, Link } = Typography;
 
-const Section = ({ title, icon, children }: any) => (
-    <Paper sx={{ mb: 6, p: 4, bgcolor: COLORS.glass, border: `1px solid ${COLORS.glassBorder}`, borderRadius: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-            <Box sx={{ color: COLORS.primary, mr: 2, display: 'flex' }}>{icon}</Box>
-            <Typography variant="h5" sx={{ fontWeight: 700, color: '#fff' }}>{title}</Typography>
-        </Box>
-        <Divider sx={{ borderColor: 'rgba(255,255,255,0.05)', mb: 3 }} />
+const Section = ({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) => (
+    <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <span style={{ fontSize: 24 }}>{icon}</span>
+            <Title level={4} style={{ margin: 0 }}>{title}</Title>
+        </div>
+        <Divider style={{ margin: '0 0 16px' }} />
         {children}
-    </Paper>
+    </Card>
 );
 
 export default function DocumentationPage() {
     return (
-        <Box sx={{ minHeight: '100vh', pt: 4, pb: 10 }}>
-            <Container maxWidth="lg">
-                <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb" sx={{ mb: 4, color: COLORS.textSecondary }}>
-                    <MuiLink underline="hover" color="inherit" href="/">Home</MuiLink>
-                    <Typography color="white" fontWeight={600}>Documentation</Typography>
-                </Breadcrumbs>
+        <div style={{ minHeight: '100vh', padding: '24px 0 80px' }}>
+            <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
+                <Breadcrumb
+                    style={{ marginBottom: 24 }}
+                    items={[
+                        { title: <a href="/">Home</a> },
+                        { title: 'Documentation' },
+                    ]}
+                />
 
-                <Box sx={{ textAlign: 'center', mb: 8 }}>
-                    <Typography variant="h2" sx={{ fontWeight: 800, color: '#fff', mb: 2 }}>
-                        Documentation
-                    </Typography>
-                    <Typography variant="h6" sx={{ color: COLORS.textSecondary, maxWidth: 800, mx: 'auto' }}>
-                        Comprehensive guides on LayoutXpert's GNN architecture, API endpoints, and integration workflows for physical design automation.
-                    </Typography>
-                </Box>
+                <div style={{ textAlign: 'center', marginBottom: 48 }}>
+                    <Title level={2}>Documentation</Title>
+                    <Paragraph type="secondary" style={{ maxWidth: 800, margin: '0 auto' }}>
+                        Comprehensive guides on LayoutXpert&apos;s GNN architecture, API endpoints, and integration workflows for physical design automation.
+                    </Paragraph>
+                </div>
 
-                <Section title="Getting Started" icon={<MenuBookIcon fontSize="large" />}>
-                    <Typography paragraph sx={{ color: '#cbd5e1', lineHeight: 1.8 }}>
+                <Section title="Getting Started" icon={<ReadOutlined />}>
+                    <Paragraph>
                         LayoutXpert.AI bridges the gap between EDA physical design and geometric deep learning.
-                        To begin, ensure you have your design data formatted in standard <b>LEF/DEF</b> or parsed graph formats (PyTorch Geometric compatible).
-                    </Typography>
+                        To begin, ensure you have your design data formatted in standard <strong>LEF/DEF</strong> or parsed graph formats (PyTorch Geometric compatible).
+                    </Paragraph>
 
-                    <Typography variant="h6" sx={{ color: '#fff', mt: 3, mb: 1 }}>Prerequisites</Typography>
-                    <Box component="ul" sx={{ color: '#cbd5e1', pl: 2, lineHeight: 1.8 }}>
+                    <Title level={5}>Prerequisites</Title>
+                    <ul>
                         <li>Python 3.8+ environment</li>
                         <li>NVIDIA GPU (CUDA 11.3+) for inference acceleration</li>
                         <li>EDA Tools (Cadence Innovus / Synopsys ICC2) output logs for ground truth validation</li>
-                    </Box>
+                    </ul>
                 </Section>
 
-                <Section title="GNN Model Architecture" icon={<ArchitectureIcon fontSize="large" />}>
-                    <Typography paragraph sx={{ color: '#cbd5e1', lineHeight: 1.8 }}>
+                <Section title="GNN Model Architecture" icon={<ClusterOutlined />}>
+                    <Paragraph>
                         Our platform utilizes a novel hetero-graph neural network designed specifically for Integrated Circuit (IC) netlists.
                         The architecture consists of three main stages:
-                    </Typography>
+                    </Paragraph>
 
-                    <Stack spacing={3} sx={{ mt: 3 }}>
-                        <Box sx={{ p: 2, borderLeft: `4px solid ${COLORS.primary}`, bgcolor: 'rgba(6, 182, 212, 0.05)' }}>
-                            <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 700 }}>1. Feature Embedding</Typography>
-                            <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+                    <Space direction="vertical" size="middle" style={{ width: '100%', marginTop: 16 }}>
+                        <Card size="small" style={{ borderLeft: '4px solid #1677ff' }}>
+                            <Text strong>1. Feature Embedding</Text>
+                            <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>
                                 Raw features (gate size, location x/y, fan-in/out) are projected into a 128-dim latent space using Multi-Layer Perceptrons (MLPs).
-                            </Typography>
-                        </Box>
-                        <Box sx={{ p: 2, borderLeft: `4px solid ${COLORS.secondary}`, bgcolor: 'rgba(59, 130, 246, 0.05)' }}>
-                            <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 700 }}>2. Message Passing (MPNN)</Typography>
-                            <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+                            </Paragraph>
+                        </Card>
+                        <Card size="small" style={{ borderLeft: '4px solid #722ed1' }}>
+                            <Text strong>2. Message Passing (MPNN)</Text>
+                            <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>
                                 Information aggregates across cell-net-cell edges. We use GATv2 layers to attend to critical timing paths dynamically.
-                            </Typography>
-                        </Box>
-                        <Box sx={{ p: 2, borderLeft: `4px solid #8b5cf6`, bgcolor: 'rgba(139, 92, 246, 0.05)' }}>
-                            <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 700 }}>3. Readout & Prediction</Typography>
-                            <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+                            </Paragraph>
+                        </Card>
+                        <Card size="small" style={{ borderLeft: '4px solid #13c2c2' }}>
+                            <Text strong>3. Readout & Prediction</Text>
+                            <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>
                                 Global pooling aggregates graph-level stats for speed prediction (Regression), while node-level classifiers output violation probabilities (Binary Classification).
-                            </Typography>
-                        </Box>
-                    </Stack>
+                            </Paragraph>
+                        </Card>
+                    </Space>
                 </Section>
 
-                <Section title="Technology Process Support" icon={<ScienceIcon fontSize="large" />}>
-                    <Typography paragraph sx={{ color: '#cbd5e1', lineHeight: 1.8 }}>
-                        The current version is calibrated for <b>TSMC N2 (2nm)</b> process nodes, accounting for FinFET/NanoSheet device characteristics.
+                <Section title="Technology Process Support" icon={<ExperimentOutlined />}>
+                    <Paragraph>
+                        The current version is calibrated for <strong>TSMC N2 (2nm)</strong> process nodes, accounting for FinFET/NanoSheet device characteristics.
                         Resistance and Capacitance (RC) extraction models are tuned to handle high wire resistance in advanced nodes.
-                    </Typography>
-                    <Typography variant="subtitle2" sx={{ color: COLORS.primary }}>
-                        *Backward compatibility with N5/N7 is available via the 'Legacy Mode' flag.
-                    </Typography>
+                    </Paragraph>
+                    <Text type="secondary" style={{ fontStyle: 'italic' }}>
+                        *Backward compatibility with N5/N7 is available via the &apos;Legacy Mode&apos; flag.
+                    </Text>
                 </Section>
 
-                <Section title="API Reference" icon={<BuildIcon fontSize="large" />}>
-                    <Typography paragraph sx={{ color: '#cbd5e1', lineHeight: 1.8 }}>
+                <Section title="API Reference" icon={<ToolOutlined />}>
+                    <Paragraph>
                         The platform exposes RESTful endpoints for automated pipeline integration.
-                    </Typography>
-                    <Box sx={{ fontFamily: 'monospace', bgcolor: '#020617', p: 3, borderRadius: 2, border: '1px solid #334155' }}>
-                        <Typography sx={{ color: COLORS.secondary }}>POST /api/v1/jobs/submit</Typography>
-                        <Typography sx={{ color: '#64748b', fontSize: '0.9rem', mb: 2 }}>Submit a new training or inference job.</Typography>
+                    </Paragraph>
+                    <Card size="small" style={{ fontFamily: 'monospace', background: '#141414' }}>
+                        <div style={{ color: '#1677ff' }}>POST /api/v1/jobs/submit</div>
+                        <div style={{ color: '#8c8c8c', fontSize: 13, marginBottom: 12 }}>Submit a new training or inference job.</div>
 
-                        <Typography sx={{ color: '#22c55e' }}>GET /api/v1/datasets/{'{id}'}/explore</Typography>
-                        <Typography sx={{ color: '#64748b', fontSize: '0.9rem', mb: 2 }}>Retrieve graph statistics and topology metrics.</Typography>
+                        <div style={{ color: '#52c41a' }}>GET /api/v1/datasets/{'{id}'}/explore</div>
+                        <div style={{ color: '#8c8c8c', fontSize: 13, marginBottom: 12 }}>Retrieve graph statistics and topology metrics.</div>
 
-                        <Typography sx={{ color: '#eab308' }}>GET /api/v1/models/leaderboard</Typography>
-                        <Typography sx={{ color: '#64748b', fontSize: '0.9rem' }}>Fetch comparative performance of trained architectures.</Typography>
-                    </Box>
-                    <Box sx={{ mt: 2 }}>
-                        <MuiLink href="/api-spec" sx={{ color: COLORS.primary, fontWeight: 600 }}>View Full Swagger Specification &rarr;</MuiLink>
-                    </Box>
+                        <div style={{ color: '#faad14' }}>GET /api/v1/models/leaderboard</div>
+                        <div style={{ color: '#8c8c8c', fontSize: 13 }}>Fetch comparative performance of trained architectures.</div>
+                    </Card>
+                    <div style={{ marginTop: 12 }}>
+                        <Link href="/api-spec">View Full Swagger Specification &rarr;</Link>
+                    </div>
                 </Section>
-            </Container>
-        </Box>
+            </div>
+        </div>
     );
 }

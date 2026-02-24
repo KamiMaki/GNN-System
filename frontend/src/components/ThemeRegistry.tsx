@@ -1,9 +1,8 @@
 'use client';
 import * as React from 'react';
-import { ThemeProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import { AppRouterCacheProvider } from '@mui/material-nextjs/v14-appRouter';
-import { getTheme } from '@/theme/theme'; // Updated import
+import { ConfigProvider, App } from 'antd';
+import { AntdRegistry } from '@ant-design/nextjs-registry';
+import { getTheme } from '@/theme/theme';
 import { ColorModeContext } from '@/contexts/ColorModeContext';
 
 export default function ThemeRegistry({ children }: { children: React.ReactNode }) {
@@ -19,17 +18,17 @@ export default function ThemeRegistry({ children }: { children: React.ReactNode 
     [mode],
   );
 
-  const theme = React.useMemo(() => getTheme(mode), [mode]);
+  const themeConfig = React.useMemo(() => getTheme(mode), [mode]);
 
   return (
-    <AppRouterCacheProvider options={{ key: 'mui' }}>
+    <AntdRegistry>
       <ColorModeContext.Provider value={colorMode}>
-        <ThemeProvider theme={theme}>
-          {/* CssBaseline kickstarts an elegant, consistent, and simple baseline to build upon. */}
-          <CssBaseline />
-          {children}
-        </ThemeProvider>
+        <ConfigProvider theme={themeConfig}>
+          <App>
+            {children}
+          </App>
+        </ConfigProvider>
       </ColorModeContext.Provider>
-    </AppRouterCacheProvider>
+    </AntdRegistry>
   );
 }
