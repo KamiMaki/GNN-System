@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography } from 'antd';
+import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme } from 'antd';
 import { TrophyOutlined } from '@ant-design/icons';
 
 import {
@@ -60,6 +60,7 @@ export default function EvaluatePage() {
     const searchParams = useSearchParams();
     const projectId = params.id as string;
     const taskIdParam = searchParams.get('task_id');
+    const { token } = theme.useToken();
 
     const [report, setReport] = useState<Report | null>(null);
     const [loading, setLoading] = useState(true);
@@ -163,37 +164,57 @@ export default function EvaluatePage() {
                     </Space>
                 </Card>
 
-                {/* Confusion Matrix */}
+                {/* Confusion Matrix — dynamic NxN */}
                 {isClassification && report.confusion_matrix && (
                     <Card title="Confusion Matrix">
-                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: 8, maxWidth: 500, margin: '0 auto' }}>
-                            <div />
-                            <div style={{ textAlign: 'center', padding: 8 }}><Text type="secondary">Pred. Negative</Text></div>
-                            <div style={{ textAlign: 'center', padding: 8 }}><Text type="secondary">Pred. Positive</Text></div>
-                            {report.confusion_matrix.map((row, i) => (
-                                <React.Fragment key={i}>
-                                    <div style={{ display: 'flex', alignItems: 'center', padding: 8 }}>
-                                        <Text type="secondary">{row.actual}</Text>
+                        {(() => {
+                            const { labels, matrix } = report.confusion_matrix;
+                            const n = labels.length;
+                            const maxVal = Math.max(...matrix.flat(), 1);
+                            return (
+                                <div style={{ overflowX: 'auto' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${n}, minmax(60px, 1fr))`, gap: 4, width: 'fit-content', margin: '0 auto' }}>
+                                        {/* Header row */}
+                                        <div style={{ textAlign: 'center', padding: 8 }}>
+                                            <Text type="secondary" style={{ fontSize: 11 }}>Actual \\ Pred.</Text>
+                                        </div>
+                                        {labels.map(label => (
+                                            <div key={label} style={{ textAlign: 'center', padding: 8 }}>
+                                                <Text type="secondary" style={{ fontSize: 11 }}>{label}</Text>
+                                            </div>
+                                        ))}
+                                        {/* Data rows */}
+                                        {matrix.map((row, i) => (
+                                            <React.Fragment key={i}>
+                                                <div style={{ display: 'flex', alignItems: 'center', padding: 8 }}>
+                                                    <Text strong style={{ fontSize: 12 }}>{labels[i]}</Text>
+                                                </div>
+                                                {row.map((val, j) => {
+                                                    const isDiag = i === j;
+                                                    const intensity = val / maxVal;
+                                                    const bg = isDiag
+                                                        ? `color-mix(in srgb, ${token.colorSuccess} ${Math.round(intensity * 60 + 10)}%, ${token.colorBgContainer})`
+                                                        : val > 0
+                                                            ? `color-mix(in srgb, ${token.colorError} ${Math.round(intensity * 60 + 10)}%, ${token.colorBgContainer})`
+                                                            : token.colorBgContainer;
+                                                    return (
+                                                        <div key={j} style={{
+                                                            textAlign: 'center',
+                                                            padding: '12px 8px',
+                                                            borderRadius: token.borderRadius,
+                                                            background: bg,
+                                                            border: `1px solid ${token.colorBorderSecondary}`,
+                                                        }}>
+                                                            <Title level={5} style={{ margin: 0 }}>{val}</Title>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </React.Fragment>
+                                        ))}
                                     </div>
-                                    <div style={{
-                                        textAlign: 'center', padding: 16, borderRadius: 8,
-                                        background: row.actual === 'Negative' ? 'rgba(82, 196, 26, 0.1)' : 'rgba(255, 77, 79, 0.1)',
-                                    }}>
-                                        <Title level={4} style={{ margin: 0, color: row.actual === 'Negative' ? '#52c41a' : '#ff4d4f' }}>
-                                            {row.predicted_negative}
-                                        </Title>
-                                    </div>
-                                    <div style={{
-                                        textAlign: 'center', padding: 16, borderRadius: 8,
-                                        background: row.actual === 'Positive' ? 'rgba(82, 196, 26, 0.1)' : 'rgba(255, 77, 79, 0.1)',
-                                    }}>
-                                        <Title level={4} style={{ margin: 0, color: row.actual === 'Positive' ? '#52c41a' : '#ff4d4f' }}>
-                                            {row.predicted_positive}
-                                        </Title>
-                                    </div>
-                                </React.Fragment>
-                            ))}
-                        </div>
+                                </div>
+                            );
+                        })()}
                     </Card>
                 )}
 

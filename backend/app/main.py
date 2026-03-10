@@ -19,7 +19,7 @@ app = FastAPI(title="LayoutXpert GNN API", version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000","https://94bf-123-241-84-178.ngrok-free.app"],
+    allow_origins=["http://localhost:3000","https://81ca-123-241-84-178.ngrok-free.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

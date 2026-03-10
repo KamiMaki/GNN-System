@@ -106,11 +106,17 @@ class CreateProjectRequest(BaseModel):
     tags: list[str] = []
 
 
+class UpdateProjectRequest(BaseModel):
+    name: Optional[str] = None
+    tags: Optional[list[str]] = None
+
+
 class ProjectSummary(BaseModel):
     project_id: str
     name: str
     tags: list[str]
     created_at: str
+    updated_at: Optional[str] = None
     current_step: int
     status: str
     dataset_id: Optional[str] = None
@@ -192,10 +198,9 @@ class EpochHistory(BaseModel):
     accuracy: Optional[float] = None
 
 
-class ConfusionRow(BaseModel):
-    actual: str
-    predicted_negative: int
-    predicted_positive: int
+class ConfusionMatrix(BaseModel):
+    labels: list[str]       # class labels
+    matrix: list[list[int]] # NxN matrix
 
 
 class Report(BaseModel):
@@ -204,7 +209,7 @@ class Report(BaseModel):
     val_metrics: Optional[SplitMetrics] = None
     test_metrics: SplitMetrics
     history: list[EpochHistory]
-    confusion_matrix: Optional[list[ConfusionRow]] = None
+    confusion_matrix: Optional[ConfusionMatrix] = None
     residual_data: Optional[list[dict]] = None  # [{actual, predicted}] for regression
     best_config: Optional[BestConfig] = None
     leaderboard: Optional[list[LeaderboardEntry]] = None

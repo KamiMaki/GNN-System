@@ -7,6 +7,7 @@ from torch_geometric.loader import DataLoader
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score,
+    confusion_matrix as sklearn_confusion_matrix,
 )
 
 from app.core import store
@@ -184,17 +185,15 @@ def run_training_task(task_id: str) -> None:
         # Val metrics = test metrics (test is used as validation during training)
         val_metrics = dict(test_metrics)
 
-        # Confusion matrix (classification only)
+        # Confusion matrix (classification only) — NxN multiclass format
         confusion_matrix = None
         if is_classification:
-            tp = int(((test_preds == 1) & (test_y_true == 1)).sum())
-            fp = int(((test_preds == 1) & (test_y_true == 0)).sum())
-            fn = int(((test_preds == 0) & (test_y_true == 1)).sum())
-            tn = int(((test_preds == 0) & (test_y_true == 0)).sum())
-            confusion_matrix = [
-                {"actual": "Positive", "predicted_negative": fn, "predicted_positive": tp},
-                {"actual": "Negative", "predicted_negative": tn, "predicted_positive": fp},
-            ]
+            unique_labels = sorted(set(test_y_true.tolist()) | set(test_preds.tolist()))
+            cm = sklearn_confusion_matrix(test_y_true, test_preds, labels=unique_labels)
+            confusion_matrix = {
+                "labels": [str(lbl) for lbl in unique_labels],
+                "matrix": cm.tolist(),
+            }
 
         # Residual data (regression only)
         residual_data = None

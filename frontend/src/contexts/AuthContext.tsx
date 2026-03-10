@@ -14,6 +14,7 @@ interface User {
 interface AuthContextType {
     user: User | null;
     isLoading: boolean;
+    initialized: boolean;
     login: () => Promise<void>;
     logout: () => void;
 }
@@ -21,6 +22,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
     user: null,
     isLoading: false,
+    initialized: false,
     login: async () => { },
     logout: () => { },
 });
@@ -30,6 +32,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [initialized, setInitialized] = useState(false);
     const router = useRouter();
 
     // Simulate session check
@@ -38,6 +41,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (storedUser) {
             setUser(JSON.parse(storedUser));
         }
+        setInitialized(true);
     }, []);
 
     const login = async () => {
@@ -66,7 +70,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+        <AuthContext.Provider value={{ user, isLoading, initialized, login, logout }}>
             {children}
         </AuthContext.Provider>
     );

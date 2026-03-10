@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Button, Card, Input, Space, Alert, Spin, Tag, Divider, Row, Col, Typography } from 'antd';
+import { Button, Card, Input, Space, Alert, Spin, Tag, Divider, Row, Col, Typography, theme } from 'antd';
 import {
     CloudUploadOutlined, FolderOpenOutlined, ExperimentOutlined,
     CheckCircleOutlined, FileTextOutlined, DownloadOutlined,
@@ -70,6 +70,7 @@ export default function UploadPage() {
     const params = useParams();
     const router = useRouter();
     const projectId = params.id as string;
+    const { token } = theme.useToken();
     const folderInputRef = useRef<HTMLInputElement>(null);
 
     const [datasetName, setDatasetName] = useState('');
@@ -189,7 +190,7 @@ export default function UploadPage() {
                     hoverable
                     style={{
                         textAlign: 'center',
-                        border: `2px dashed ${selectedFiles.length > 0 ? '#52c41a' : '#d9d9d9'}`,
+                        border: `2px dashed ${selectedFiles.length > 0 ? token.colorSuccess : token.colorBorder}`,
                         cursor: 'pointer',
                     }}
                     styles={{ body: { padding: 32 } }}

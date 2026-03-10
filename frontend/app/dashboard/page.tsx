@@ -3,16 +3,29 @@
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-    Button, Input, Card, Tag, Modal, Space, Spin, Avatar, Dropdown, Divider, Row, Col, Typography, Empty,
+    Button, Input, Card, Tag, Modal, Space, Skeleton, Row, Col, Typography, Empty, theme,
 } from 'antd';
 import {
-    PlusOutlined, SearchOutlined, FolderOutlined, AppstoreOutlined,
-    DeleteOutlined, UserOutlined, SettingOutlined, LogoutOutlined,
+    PlusOutlined, SearchOutlined, DeleteOutlined, EditOutlined,
 } from '@ant-design/icons';
 
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { deleteProject, ProjectSummary } from '@/lib/api';
+import { deleteProject, updateProject, ProjectSummary } from '@/lib/api';
+import AppHeader from '@/components/AppHeader';
+import PageTransition from '@/components/PageTransition';
+
+function timeAgo(dateStr: string): string {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(dateStr).toLocaleDateString();
+}
 
 const { Title, Text } = Typography;
 
@@ -40,7 +53,8 @@ function getStepPath(project: ProjectSummary): string {
 export default function DashboardPage() {
     const router = useRouter();
     const { projects, loading, createNewProject, refreshProjects } = useProject();
-    const { user, logout } = useAuth();
+    const { user } = useAuth();
+    const { token } = theme.useToken();
 
     const [search, setSearch] = useState('');
     const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -49,6 +63,9 @@ export default function DashboardPage() {
     const [newTags, setNewTags] = useState<string[]>([]);
     const [tagInput, setTagInput] = useState('');
     const [creating, setCreating] = useState(false);
+    const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
+    const [editName, setEditName] = useState('');
+    const [saving, setSaving] = useState(false);
 
     const allTags = useMemo(() => {
         const tags = new Set<string>();
@@ -106,53 +123,31 @@ export default function DashboardPage() {
         }
     };
 
-    const userMenuItems = user ? {
-        items: [
-            { key: 'header', label: <div><div style={{ fontWeight: 700 }}>{user.name}</div><div style={{ fontSize: 12, opacity: 0.6 }}>{user.email}</div></div>, disabled: true },
-            { type: 'divider' as const },
-            { key: 'profile', label: 'Profile', icon: <UserOutlined /> },
-            { key: 'settings', label: 'Settings', icon: <SettingOutlined /> },
-            { type: 'divider' as const },
-            { key: 'logout', label: 'Logout', icon: <LogoutOutlined />, danger: true },
-        ],
-        onClick: ({ key }: { key: string }) => {
-            if (key === 'logout') logout();
-        },
-    } : { items: [] };
+    const handleEditOpen = (e: React.MouseEvent, project: ProjectSummary) => {
+        e.stopPropagation();
+        setEditProject(project);
+        setEditName(project.name);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editProject || !editName.trim()) return;
+        setSaving(true);
+        try {
+            await updateProject(editProject.project_id, { name: editName.trim() });
+            refreshProjects();
+            setEditProject(null);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setSaving(false);
+        }
+    };
 
     return (
         <div>
-            {/* Header */}
-            <div style={{
-                padding: '16px 24px',
-                borderBottom: '1px solid rgba(0,0,0,0.06)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-            }}>
-                <Button
-                    type="text"
-                    icon={<AppstoreOutlined />}
-                    onClick={() => router.push('/dashboard')}
-                    style={{ fontWeight: 800, fontSize: '1rem' }}
-                >
-                    LayoutXpert
-                </Button>
-                <Text type="secondary">PROJECT WORKSPACE</Text>
-                <div style={{ flex: 1 }} />
-                {user && (
-                    <Dropdown menu={userMenuItems} trigger={['click']} placement="bottomRight">
-                        <Avatar
-                            src={user.avatar}
-                            alt={user.name}
-                            size={32}
-                            style={{ cursor: 'pointer' }}
-                            icon={<UserOutlined />}
-                        />
-                    </Dropdown>
-                )}
-            </div>
+            <AppHeader subtitle="PROJECT WORKSPACE" />
 
+            <PageTransition>
             <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
                 {/* Toolbar */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -193,23 +188,37 @@ export default function DashboardPage() {
 
                 {/* Project Grid */}
                 {loading && projects.length === 0 ? (
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
-                        <Spin size="large" />
-                    </div>
+                    <Row gutter={[24, 24]}>
+                        {[1, 2, 3].map(i => (
+                            <Col xs={24} sm={12} md={8} key={i}>
+                                <Card>
+                                    <Skeleton active paragraph={{ rows: 3 }} />
+                                </Card>
+                            </Col>
+                        ))}
+                    </Row>
                 ) : filtered.length === 0 ? (
                     <Empty
-                        image={<FolderOutlined style={{ fontSize: 64, opacity: 0.3 }} />}
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
                         description={
                             <Space direction="vertical" size={4}>
-                                <Text type="secondary">
+                                <Text strong>
                                     {projects.length === 0 ? 'No projects yet' : 'No matching projects'}
                                 </Text>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {projects.length === 0 ? 'Create your first project to get started.' : 'Try adjusting your search or filters.'}
+                                <Text type="secondary" style={{ fontSize: 13 }}>
+                                    {projects.length === 0
+                                        ? 'Create your first project to start training GNN models'
+                                        : 'Try adjusting your search or tag filters'}
                                 </Text>
                             </Space>
                         }
-                    />
+                    >
+                        {projects.length === 0 && (
+                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setDialogOpen(true)}>
+                                Create First Project
+                            </Button>
+                        )}
+                    </Empty>
                 ) : (
                     <Row gutter={[24, 24]}>
                         {filtered.map((project) => (
@@ -219,13 +228,21 @@ export default function DashboardPage() {
                                     onClick={() => router.push(getStepPath(project))}
                                     styles={{ body: { padding: 20 } }}
                                     extra={
-                                        <Button
-                                            type="text"
-                                            danger
-                                            size="small"
-                                            icon={<DeleteOutlined />}
-                                            onClick={(e) => handleDelete(e, project.project_id)}
-                                        />
+                                        <Space size={4}>
+                                            <Button
+                                                type="text"
+                                                size="small"
+                                                icon={<EditOutlined />}
+                                                onClick={(e) => handleEditOpen(e, project)}
+                                            />
+                                            <Button
+                                                type="text"
+                                                danger
+                                                size="small"
+                                                icon={<DeleteOutlined />}
+                                                onClick={(e) => handleDelete(e, project.project_id)}
+                                            />
+                                        </Space>
                                     }
                                     title={<Text strong ellipsis style={{ maxWidth: 200 }}>{project.name}</Text>}
                                 >
@@ -242,7 +259,7 @@ export default function DashboardPage() {
                                             {project.status.replace('_', ' ').toUpperCase()}
                                         </Tag>
                                         <Text type="secondary" style={{ fontSize: 12 }}>
-                                            {new Date(project.created_at).toLocaleDateString()}
+                                            {timeAgo(project.updated_at || project.created_at)}
                                         </Text>
                                     </div>
 
@@ -252,7 +269,7 @@ export default function DashboardPage() {
                                             <div key={label} style={{ flex: 1, textAlign: 'center' }}>
                                                 <div style={{
                                                     height: 3, borderRadius: 2, marginBottom: 4,
-                                                    background: i < project.current_step ? '#1677ff' : '#f0f0f0',
+                                                    background: i < project.current_step ? token.colorPrimary : token.colorFillSecondary,
                                                 }} />
                                                 <Text type="secondary" style={{ fontSize: 10 }}>{label}</Text>
                                             </div>
@@ -298,6 +315,26 @@ export default function DashboardPage() {
                     </div>
                 </Space>
             </Modal>
+
+            {/* Edit Project Modal */}
+            <Modal
+                title="Rename Project"
+                open={!!editProject}
+                onCancel={() => setEditProject(null)}
+                onOk={handleSaveEdit}
+                okText={saving ? 'Saving...' : 'Save'}
+                okButtonProps={{ disabled: !editName.trim() || saving, loading: saving }}
+            >
+                <Input
+                    placeholder="Project Name"
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveEdit(); }}
+                    autoFocus
+                    style={{ marginTop: 16 }}
+                />
+            </Modal>
+            </PageTransition>
         </div>
     );
 }

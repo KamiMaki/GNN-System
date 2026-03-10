@@ -26,6 +26,7 @@ from app.schemas.api_models import (
     ConfirmDataRequest,
     CorrelationRequest,
     CreateProjectRequest,
+    UpdateProjectRequest,
     DatasetSummary,
     GenericExploreData,
     ImputationRequest,
@@ -87,6 +88,7 @@ def _to_summary(p: dict) -> ProjectSummary:
         name=p["name"],
         tags=p.get("tags", []),
         created_at=p["created_at"],
+        updated_at=p.get("updated_at", p["created_at"]),
         current_step=p.get("current_step", 1),
         status=p.get("status", "created"),
         dataset_id=p.get("dataset_id"),
@@ -99,11 +101,13 @@ def _to_summary(p: dict) -> ProjectSummary:
 @router.post("/", response_model=ProjectSummary)
 async def create_project(body: CreateProjectRequest):
     project_id = str(uuid.uuid4())
+    now = _now_iso()
     record = {
         "project_id": project_id,
         "name": body.name,
         "tags": body.tags,
-        "created_at": _now_iso(),
+        "created_at": now,
+        "updated_at": now,
         "current_step": 1,
         "status": "created",
         "dataset_id": None,
@@ -266,6 +270,18 @@ async def delete_project(project_id: str):
     _project_or_404(project_id)
     store.delete_project(project_id)
     return {"detail": "Project deleted"}
+
+
+@router.patch("/{project_id}", response_model=ProjectSummary)
+async def update_project(project_id: str, body: UpdateProjectRequest):
+    _project_or_404(project_id)
+    updates: dict = {"updated_at": _now_iso()}
+    if body.name is not None:
+        updates["name"] = body.name
+    if body.tags is not None:
+        updates["tags"] = body.tags
+    store.update_project(project_id, **updates)
+    return _to_summary(store.get_project(project_id))
 
 
 # ── Step 1: Upload Data ──
@@ -787,6 +803,7 @@ async def confirm_data(project_id: str, body: ConfirmDataRequest):
         label_column=body.label_column,
         current_step=3,
         status="data_confirmed",
+        updated_at=_now_iso(),
     )
 
     # Update dataset task_type and num_classes

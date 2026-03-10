@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, usePathname } from 'next/navigation';
-import { Spin } from 'antd';
+import { Skeleton } from 'antd';
 import PipelineStepper from '@/components/PipelineStepper';
 import { getProject, ProjectDetail } from '@/lib/api';
 
@@ -24,8 +24,13 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
     if (loading) {
         return (
-            <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Spin size="large" />
+            <div style={{ minHeight: '100vh' }}>
+                <div style={{ padding: '12px 24px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                    <Skeleton.Input active style={{ width: 600 }} />
+                </div>
+                <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+                    <Skeleton active paragraph={{ rows: 8 }} />
+                </div>
             </div>
         );
     }

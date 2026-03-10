@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-    Button, Card, Tag, Slider, Switch, Alert, Spin, Space, Table, Tooltip, Progress, Typography, Checkbox, Row, Col,
+    Button, Card, Tag, Slider, Switch, Alert, Spin, Space, Table, Tooltip, Progress, Typography, Checkbox, Row, Col, theme,
 } from 'antd';
 import {
     PlayCircleOutlined, AppstoreOutlined, ClockCircleOutlined,
@@ -31,6 +31,7 @@ export default function TrainPage() {
     const params = useParams();
     const router = useRouter();
     const projectId = params.id as string;
+    const { token } = theme.useToken();
 
     const [project, setProject] = useState<ProjectDetail | null>(null);
 
@@ -342,7 +343,7 @@ export default function TrainPage() {
                         <Card
                             title={
                                 <Space>
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRunning ? '#52c41a' : '#d9d9d9' }} />
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRunning ? token.colorSuccess : token.colorBorder }} />
                                     <Text type="secondary" style={{ fontSize: 12 }}>TRAINING LOG</Text>
                                 </Space>
                             }
@@ -358,7 +359,7 @@ export default function TrainPage() {
                                     overflowY: 'auto',
                                     fontFamily: 'monospace',
                                     fontSize: 13,
-                                    background: '#fafafa',
+                                    background: token.colorBgLayout,
                                 }}
                             >
                                 {logs.length === 0 ? (
@@ -366,8 +367,8 @@ export default function TrainPage() {
                                 ) : (
                                     logs.map((line, i) => (
                                         <div key={i} style={{
-                                            color: line.includes('FAILED') ? '#ff4d4f' :
-                                                line.includes('completed') ? '#52c41a' : '#73d13d',
+                                            color: line.includes('FAILED') ? token.colorError :
+                                                line.includes('completed') ? token.colorSuccess : token.colorSuccessActive,
                                             lineHeight: 1.8,
                                         }}>
                                             {line}

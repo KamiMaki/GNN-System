@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-    Button, Card, Tag, Select, Checkbox, Alert, Spin, Segmented, Space, Table, Typography, AutoComplete, Row, Col, Statistic,
+    Button, Card, Tag, Select, Checkbox, Alert, Spin, Segmented, Space, Table, Typography, AutoComplete, Row, Col, Statistic, theme,
 } from 'antd';
 import {
     CheckCircleOutlined, WarningOutlined, ArrowRightOutlined,
@@ -32,6 +32,7 @@ export default function ExplorePage() {
     const params = useParams();
     const router = useRouter();
     const projectId = params.id as string;
+    const { token } = theme.useToken();
 
     const [exploreData, setExploreData] = useState<GenericExploreData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -257,8 +258,8 @@ export default function ExplorePage() {
                                             const val = cell?.value || 0;
                                             const intensity = Math.abs(val);
                                             const bgColor = val > 0
-                                                ? `rgba(22, 119, 255, ${intensity * 0.5})`
-                                                : `rgba(255, 77, 79, ${intensity * 0.5})`;
+                                                ? `color-mix(in srgb, ${token.colorPrimary} ${Math.round(intensity * 50)}%, transparent)`
+                                                : `color-mix(in srgb, ${token.colorError} ${Math.round(intensity * 50)}%, transparent)`;
                                             return (
                                                 <div key={`${row}-${col}`} style={{
                                                     background: bgColor,
