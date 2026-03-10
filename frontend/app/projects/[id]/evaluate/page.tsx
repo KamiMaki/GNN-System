@@ -140,13 +140,22 @@ export default function EvaluatePage() {
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 24,
+                paddingBottom: 16,
+                borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            }}>
                 <div>
                     <Title level={3} style={{ margin: 0 }}>Model Evaluation</Title>
-                    <Text type="secondary">Task: {report.task_type.replace('_', ' ').toUpperCase()}</Text>
+                    <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                        Task: {report.task_type.replace('_', ' ').toUpperCase()}
+                    </Text>
                 </div>
                 {report.best_config && (
-                    <Tag icon={<TrophyOutlined />} color="gold">
+                    <Tag icon={<TrophyOutlined />} color="gold" style={{ fontSize: 13, padding: '4px 12px' }}>
                         Best: {report.best_config.model_name.toUpperCase()}
                     </Tag>
                 )}
@@ -173,44 +182,66 @@ export default function EvaluatePage() {
                             const maxVal = Math.max(...matrix.flat(), 1);
                             return (
                                 <div style={{ overflowX: 'auto' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${n}, minmax(60px, 1fr))`, gap: 4, width: 'fit-content', margin: '0 auto' }}>
-                                        {/* Header row */}
-                                        <div style={{ textAlign: 'center', padding: 8 }}>
-                                            <Text type="secondary" style={{ fontSize: 11 }}>Actual \\ Pred.</Text>
+                                    <div style={{
+                                        display: 'inline-flex',
+                                        flexDirection: 'column',
+                                        gap: 0,
+                                        margin: '0 auto',
+                                        minWidth: Math.max(500, 160 + n * 100),
+                                    }}>
+                                        {/* Predicted label */}
+                                        <div style={{ textAlign: 'center', marginBottom: 8, paddingLeft: 160 }}>
+                                            <Text type="secondary" style={{ fontSize: 13, fontWeight: 600, letterSpacing: 1 }}>PREDICTED</Text>
                                         </div>
-                                        {labels.map(label => (
-                                            <div key={label} style={{ textAlign: 'center', padding: 8 }}>
-                                                <Text type="secondary" style={{ fontSize: 11 }}>{label}</Text>
+                                        {/* Header row */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: `160px repeat(${n}, minmax(90px, 1fr))`, gap: 6 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+                                                <Text type="secondary" style={{ fontSize: 12 }}>Actual \ Pred.</Text>
                                             </div>
-                                        ))}
+                                            {labels.map(label => (
+                                                <div key={label} style={{ textAlign: 'center', padding: 10 }}>
+                                                    <Text strong style={{ fontSize: 13 }}>{label}</Text>
+                                                </div>
+                                            ))}
+                                        </div>
                                         {/* Data rows */}
                                         {matrix.map((row, i) => (
-                                            <React.Fragment key={i}>
-                                                <div style={{ display: 'flex', alignItems: 'center', padding: 8 }}>
-                                                    <Text strong style={{ fontSize: 12 }}>{labels[i]}</Text>
+                                            <div key={i} style={{ display: 'grid', gridTemplateColumns: `160px repeat(${n}, minmax(90px, 1fr))`, gap: 6 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px' }}>
+                                                    <Text strong style={{ fontSize: 13 }}>{labels[i]}</Text>
                                                 </div>
                                                 {row.map((val, j) => {
                                                     const isDiag = i === j;
                                                     const intensity = val / maxVal;
                                                     const bg = isDiag
-                                                        ? `color-mix(in srgb, ${token.colorSuccess} ${Math.round(intensity * 60 + 10)}%, ${token.colorBgContainer})`
+                                                        ? `color-mix(in srgb, ${token.colorSuccess} ${Math.round(intensity * 60 + 15)}%, ${token.colorBgContainer})`
                                                         : val > 0
-                                                            ? `color-mix(in srgb, ${token.colorError} ${Math.round(intensity * 60 + 10)}%, ${token.colorBgContainer})`
+                                                            ? `color-mix(in srgb, ${token.colorError} ${Math.round(intensity * 60 + 15)}%, ${token.colorBgContainer})`
                                                             : token.colorBgContainer;
                                                     return (
                                                         <div key={j} style={{
                                                             textAlign: 'center',
-                                                            padding: '12px 8px',
+                                                            padding: '18px 14px',
                                                             borderRadius: token.borderRadius,
                                                             background: bg,
-                                                            border: `1px solid ${token.colorBorderSecondary}`,
+                                                            border: isDiag
+                                                                ? `2px solid ${token.colorSuccess}40`
+                                                                : `1px solid ${token.colorBorderSecondary}`,
+                                                            transition: 'transform 0.15s ease',
                                                         }}>
-                                                            <Title level={5} style={{ margin: 0 }}>{val}</Title>
+                                                            <div style={{ fontSize: 20, fontWeight: 700, margin: 0, lineHeight: 1.2 }}>{val}</div>
+                                                            <Text type="secondary" style={{ fontSize: 11 }}>
+                                                                {(val / row.reduce((a, b) => a + b, 0) * 100).toFixed(1)}%
+                                                            </Text>
                                                         </div>
                                                     );
                                                 })}
-                                            </React.Fragment>
+                                            </div>
                                         ))}
+                                    </div>
+                                    {/* Actual label */}
+                                    <div style={{ position: 'relative', marginTop: 8 }}>
+                                        <Text type="secondary" style={{ fontSize: 13, fontWeight: 600, letterSpacing: 1, paddingLeft: 40 }}>ACTUAL</Text>
                                     </div>
                                 </div>
                             );
@@ -227,7 +258,7 @@ export default function EvaluatePage() {
                                 <XAxis dataKey="actual" name="Actual" tick={{ fontSize: 11 }} label={{ value: 'Actual', position: 'bottom' }} />
                                 <YAxis dataKey="predicted" name="Predicted" tick={{ fontSize: 11 }} label={{ value: 'Predicted', angle: -90, position: 'left' }} />
                                 <Tooltip />
-                                <Scatter data={report.residual_data} fill="#1677ff" opacity={0.6} />
+                                <Scatter data={report.residual_data} fill={token.colorPrimary} opacity={0.6} />
                             </ScatterChart>
                         </ResponsiveContainer>
                     </Card>
@@ -246,10 +277,10 @@ export default function EvaluatePage() {
                                 )}
                                 <Tooltip />
                                 <Legend verticalAlign="top" />
-                                <Line type="monotone" dataKey="loss" name="Train Loss" stroke="#1677ff" strokeWidth={2} dot={false} yAxisId="left" />
-                                <Line type="monotone" dataKey="val_loss" name="Val Loss" stroke="#13c2c2" strokeWidth={2} dot={false} yAxisId="left" />
+                                <Line type="monotone" dataKey="loss" name="Train Loss" stroke={token.colorPrimary} strokeWidth={2} dot={false} yAxisId="left" />
+                                <Line type="monotone" dataKey="val_loss" name="Val Loss" stroke={token.colorInfo} strokeWidth={2} dot={false} yAxisId="left" />
                                 {isClassification && (
-                                    <Line type="monotone" dataKey="accuracy" name="Accuracy" stroke="#52c41a" strokeWidth={2} dot={false} yAxisId="right" />
+                                    <Line type="monotone" dataKey="accuracy" name="Accuracy" stroke={token.colorSuccess} strokeWidth={2} dot={false} yAxisId="right" />
                                 )}
                             </LineChart>
                         </ResponsiveContainer>

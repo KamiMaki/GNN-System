@@ -133,10 +133,16 @@ export default function UploadPage() {
 
     return (
         <div style={{ maxWidth: 800, margin: '0 auto', padding: '40px 24px' }}>
-            <Title level={3}>Upload Data</Title>
-            <Text type="secondary">
-                Select a project folder containing graph data, or load a demo dataset.
-            </Text>
+            <div style={{
+                marginBottom: 24,
+                paddingBottom: 16,
+                borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            }}>
+                <Title level={3} style={{ margin: 0 }}>Upload Data</Title>
+                <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                    Select a project folder containing graph data, or load a demo dataset.
+                </Text>
+            </div>
 
             <Space direction="vertical" size="large" style={{ width: '100%', marginTop: 24 }}>
                 {/* Demo Datasets */}
@@ -192,8 +198,11 @@ export default function UploadPage() {
                         textAlign: 'center',
                         border: `2px dashed ${selectedFiles.length > 0 ? token.colorSuccess : token.colorBorder}`,
                         cursor: 'pointer',
+                        background: selectedFiles.length > 0
+                            ? `${token.colorSuccess}06`
+                            : `${token.colorPrimary}04`,
                     }}
-                    styles={{ body: { padding: 32 } }}
+                    styles={{ body: { padding: 40 } }}
                 >
                     <input
                         ref={folderInputRef}
@@ -207,7 +216,7 @@ export default function UploadPage() {
                     />
                     {selectedFiles.length > 0 ? (
                         <Space direction="vertical">
-                            <CheckCircleOutlined style={{ fontSize: 40, color: '#52c41a' }} />
+                            <CheckCircleOutlined style={{ fontSize: 40, color: token.colorSuccess }} />
                             <Text strong>{selectedFiles.length} CSV files selected</Text>
                             <Text type="secondary" style={{ fontSize: 12 }}>Click to change folder</Text>
                         </Space>
@@ -234,12 +243,12 @@ export default function UploadPage() {
                                     <div key={g.name} style={{
                                         display: 'flex', alignItems: 'center', gap: 12,
                                         padding: '8px 12px', borderRadius: 8,
-                                        background: valid ? 'rgba(82, 196, 26, 0.06)' : 'rgba(255, 77, 79, 0.06)',
+                                        background: valid ? `${token.colorSuccess}0f` : `${token.colorError}0f`,
                                     }}>
                                         {valid ? (
-                                            <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                                            <CheckCircleOutlined style={{ color: token.colorSuccess }} />
                                         ) : (
-                                            <CloudUploadOutlined style={{ color: '#ff4d4f' }} />
+                                            <CloudUploadOutlined style={{ color: token.colorError }} />
                                         )}
                                         <Text strong style={{ flex: 1 }}>{g.name}</Text>
                                         <Space size={4}>

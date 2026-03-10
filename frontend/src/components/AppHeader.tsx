@@ -54,9 +54,16 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
 
     const isProjectMode = !!(projectId && projectName);
     const activeIndex = isProjectMode ? (projectStep ?? 1) - 1 : -1;
+    // maxReachableIndex: steps that the user has reached (0-indexed).
+    // projectStep is 1-indexed; step N means indices 0..N-1 are reachable.
+    // When training, step 3 (index 2) is the current one but step 4 is not yet reachable.
+    const maxReachableIndex = isProjectMode ? (projectStep ?? 1) - 1 : -1;
 
     const handleStepClick = (index: number) => {
-        if (projectId) router.push(STEP_PATHS(projectId)[index]);
+        if (!projectId) return;
+        // Only allow navigation to steps the user has reached
+        if (index > maxReachableIndex) return;
+        router.push(STEP_PATHS(projectId)[index]);
     };
 
     const userMenuItems = user ? {
@@ -192,7 +199,11 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
                                 direction="vertical"
                                 size="small"
                                 onChange={(i) => { handleStepClick(i); setDrawerOpen(false); }}
-                                items={STEPS.map(s => ({ title: s.label }))}
+                                items={STEPS.map((s, i) => ({
+                                    title: s.label,
+                                    disabled: i > maxReachableIndex,
+                                    status: (projectStatus === 'training' && i === 2) ? 'process' as const : undefined,
+                                }))}
                             />
                         )}
                         {user && (
@@ -233,7 +244,11 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
                     size="small"
                     style={{ flex: 2, maxWidth: 500 }}
                     onChange={handleStepClick}
-                    items={STEPS.map(s => ({ title: s.label }))}
+                    items={STEPS.map((s, i) => ({
+                        title: s.label,
+                        disabled: i > maxReachableIndex,
+                        status: (projectStatus === 'training' && i === 2) ? 'process' as const : undefined,
+                    }))}
                 />
             )}
             {rightSection}

@@ -188,10 +188,26 @@ export default function TrainPage() {
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
-            <Title level={3}>Model Training</Title>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
-                Configure and run GNN model training with automated hyperparameter optimization.
-            </Text>
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: 24,
+                paddingBottom: 16,
+                borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            }}>
+                <div>
+                    <Title level={3} style={{ margin: 0 }}>Model Training</Title>
+                    <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                        Configure and run GNN model training with automated hyperparameter optimization.
+                    </Text>
+                </div>
+                {experiments.length > 0 && (
+                    <Tag icon={<HistoryOutlined />} color="blue" style={{ fontSize: 13, padding: '4px 12px' }}>
+                        {experiments.length} Experiment{experiments.length !== 1 ? 's' : ''}
+                    </Tag>
+                )}
+            </div>
 
             <Row gutter={24}>
                 {/* Left: Configuration */}
@@ -287,7 +303,7 @@ export default function TrainPage() {
                                 block
                                 icon={<CheckCircleOutlined />}
                                 onClick={() => router.push(`/projects/${projectId}/evaluate`)}
-                                style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                                style={{ background: token.colorSuccess, borderColor: token.colorSuccess }}
                             >
                                 View Latest Results
                             </Button>
@@ -310,7 +326,7 @@ export default function TrainPage() {
                                     percent={taskStatus.progress}
                                     showInfo={false}
                                     status={isCompleted ? 'success' : isFailed ? 'exception' : 'active'}
-                                    strokeColor={isCompleted ? '#52c41a' : isFailed ? '#ff4d4f' : '#1677ff'}
+                                    strokeColor={isCompleted ? token.colorSuccess : isFailed ? token.colorError : token.colorPrimary}
                                 />
 
                                 <Row gutter={24} style={{ marginTop: 16 }}>
@@ -384,14 +400,22 @@ export default function TrainPage() {
             {/* Experiment History */}
             {experiments.length > 0 && (
                 <Card
-                    title={<Space><HistoryOutlined /> Experiment History ({experiments.length})</Space>}
-                    style={{ marginTop: 24 }}
-                    size="small"
+                    title={
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <HistoryOutlined style={{ color: token.colorPrimary }} />
+                            <span>Experiment History</span>
+                            <Tag color="blue" style={{ marginLeft: 4 }}>{experiments.length}</Tag>
+                        </div>
+                    }
+                    style={{
+                        marginTop: 24,
+                        borderTop: `3px solid ${token.colorPrimary}`,
+                    }}
                 >
                     <Table
                         columns={experimentColumns}
                         dataSource={experimentData}
-                        pagination={false}
+                        pagination={experiments.length > 10 ? { pageSize: 10 } : false}
                         size="small"
                         onRow={(record) => ({
                             onClick: () => {

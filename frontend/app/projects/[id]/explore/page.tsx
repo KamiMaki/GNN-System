@@ -200,12 +200,21 @@ export default function ExplorePage() {
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 24,
+                paddingBottom: 16,
+                borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            }}>
                 <div>
                     <Title level={3} style={{ margin: 0 }}>Data Analysis</Title>
-                    <Text type="secondary">Explore your data, handle missing values, and configure the learning task.</Text>
+                    <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                        Explore your data, handle missing values, and configure the learning task.
+                    </Text>
                 </div>
-                <Tag icon={<CheckCircleOutlined />} color="blue">
+                <Tag icon={<CheckCircleOutlined />} color="blue" style={{ fontSize: 13, padding: '4px 12px' }}>
                     {exploreData.num_nodes.toLocaleString()} nodes / {exploreData.num_edges.toLocaleString()} edges
                 </Tag>
             </div>
@@ -356,7 +365,7 @@ export default function ExplorePage() {
                                                 <XAxis dataKey="range" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
                                                 <YAxis tick={{ fontSize: 11 }} />
                                                 <Tooltip />
-                                                <Bar dataKey="count" fill="#1677ff" radius={[4, 4, 0, 0]} />
+                                                <Bar dataKey="count" fill={token.colorPrimary} radius={[4, 4, 0, 0]} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </>
@@ -385,7 +394,7 @@ export default function ExplorePage() {
                                             <XAxis type="number" tick={{ fontSize: 11 }} />
                                             <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
                                             <Tooltip />
-                                            <Bar dataKey="count" fill="#722ed1" radius={[0, 4, 4, 0]} />
+                                            <Bar dataKey="count" fill="#7c3aed" radius={[0, 4, 4, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 )}
@@ -473,7 +482,7 @@ export default function ExplorePage() {
                                             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                                             <YAxis tick={{ fontSize: 11 }} />
                                             <Tooltip />
-                                            <Bar dataKey="count" fill="#13c2c2" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="count" fill={token.colorInfo} radius={[4, 4, 0, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>

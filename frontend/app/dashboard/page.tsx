@@ -7,6 +7,7 @@ import {
 } from 'antd';
 import {
     PlusOutlined, SearchOutlined, DeleteOutlined, EditOutlined,
+    ExperimentOutlined, RocketOutlined, CheckCircleOutlined,
 } from '@ant-design/icons';
 
 import { useProject } from '@/contexts/ProjectContext';
@@ -143,11 +144,56 @@ export default function DashboardPage() {
         }
     };
 
+    const completedCount = projects.filter(p => p.status === 'completed').length;
+    const trainingCount = projects.filter(p => p.status === 'training').length;
+
     return (
         <div>
             <AppHeader subtitle="PROJECT WORKSPACE" />
 
             <PageTransition>
+            {/* Hero / Welcome Banner */}
+            <div style={{
+                background: `linear-gradient(135deg, ${token.colorPrimary}12 0%, ${token.colorPrimary}06 50%, transparent 100%)`,
+                borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                padding: '32px 24px',
+            }}>
+                <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+                    <Row gutter={24} align="middle">
+                        <Col flex="auto">
+                            <Title level={3} style={{ margin: 0 }}>
+                                Welcome back{user ? `, ${user.name.split(' ')[0]}` : ''}
+                            </Title>
+                            <Text type="secondary" style={{ fontSize: 14, marginTop: 4, display: 'block' }}>
+                                Manage your GNN training projects and experiments
+                            </Text>
+                        </Col>
+                        <Col>
+                            <Space size="large">
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: 24, fontWeight: 700, color: token.colorPrimary }}>{projects.length}</div>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        <ExperimentOutlined style={{ marginRight: 4 }} />Projects
+                                    </Text>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: 24, fontWeight: 700, color: token.colorSuccess }}>{completedCount}</div>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        <CheckCircleOutlined style={{ marginRight: 4 }} />Completed
+                                    </Text>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: 24, fontWeight: 700, color: token.colorWarning }}>{trainingCount}</div>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        <RocketOutlined style={{ marginRight: 4 }} />Training
+                                    </Text>
+                                </div>
+                            </Space>
+                        </Col>
+                    </Row>
+                </div>
+            </div>
+
             <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
                 {/* Toolbar */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -226,7 +272,12 @@ export default function DashboardPage() {
                                 <Card
                                     hoverable
                                     onClick={() => router.push(getStepPath(project))}
-                                    styles={{ body: { padding: 20 } }}
+                                    styles={{
+                                        body: { padding: 20 },
+                                    }}
+                                    style={{
+                                        borderTop: `3px solid ${STATUS_TAG_COLOR[project.status] === 'green' ? token.colorSuccess : STATUS_TAG_COLOR[project.status] === 'processing' ? token.colorWarning : token.colorPrimary}`,
+                                    }}
                                     extra={
                                         <Space size={4}>
                                             <Button
@@ -269,7 +320,9 @@ export default function DashboardPage() {
                                             <div key={label} style={{ flex: 1, textAlign: 'center' }}>
                                                 <div style={{
                                                     height: 3, borderRadius: 2, marginBottom: 4,
-                                                    background: i < project.current_step ? token.colorPrimary : token.colorFillSecondary,
+                                                    background: i < project.current_step
+                                                        ? `linear-gradient(90deg, ${token.colorPrimary}, ${token.colorPrimaryBg})`
+                                                        : token.colorFillSecondary,
                                                 }} />
                                                 <Text type="secondary" style={{ fontSize: 10 }}>{label}</Text>
                                             </div>
