@@ -19,7 +19,7 @@ const TAG_COLORS: Record<string, string> = {
     'single-graph': 'cyan',
     'clean': 'green',
     'edge-features': 'gold',
-    'multi-graph': 'purple',
+    'multi-graph': 'geekblue',
     'missing-data': 'red',
     'outliers': 'orange',
 };

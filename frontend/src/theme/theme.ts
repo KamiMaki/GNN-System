@@ -7,11 +7,11 @@ export const getTheme = (mode: 'light' | 'dark'): ThemeConfig => ({
   token: {
     fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     borderRadius: 8,
-    colorPrimary: '#4f46e5',
+    colorPrimary: '#0891b2',
     colorSuccess: '#10b981',
     colorWarning: '#f59e0b',
     colorError: '#ef4444',
-    colorInfo: '#3b82f6',
+    colorInfo: '#06b6d4',
     wireframe: false,
   },
   components: {
@@ -25,7 +25,7 @@ export const getTheme = (mode: 'light' | 'dark'): ThemeConfig => ({
     Button: {
       borderRadius: 8,
       controlHeight: 36,
-      primaryShadow: '0 2px 4px -1px rgba(79, 70, 229, 0.3)',
+      primaryShadow: '0 2px 4px -1px rgba(8, 145, 178, 0.3)',
     },
     Steps: {
       dotCurrentSize: 10,

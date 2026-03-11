@@ -185,7 +185,7 @@ export default function ExplorePage() {
 
     const attrColumns = [
         { title: 'Column Name', dataIndex: 'name', key: 'name', render: (v: string) => <Text strong>{v}</Text> },
-        { title: 'Type', dataIndex: 'dtype', key: 'dtype', render: (v: string) => <Tag color={v === 'numeric' ? 'blue' : 'purple'}>{v}</Tag> },
+        { title: 'Type', dataIndex: 'dtype', key: 'dtype', render: (v: string) => <Tag color={v === 'numeric' ? 'blue' : 'cyan'}>{v}</Tag> },
         {
             title: 'Role', dataIndex: 'role', key: 'role',
             render: (v: string) => <Tag color={v === 'label' ? 'gold' : v === 'id' ? 'default' : v === 'edge_attr' ? 'cyan' : 'green'}>{v}</Tag>,
@@ -306,7 +306,7 @@ export default function ExplorePage() {
                                     label: (
                                         <Space>
                                             {name}
-                                            {info && <Tag color={info.dtype === 'numeric' ? 'blue' : 'purple'}>{info.dtype}</Tag>}
+                                            {info && <Tag color={info.dtype === 'numeric' ? 'blue' : 'cyan'}>{info.dtype}</Tag>}
                                             {info && info.missing_count > 0 && <Tag color="red">{info.missing_count} missing</Tag>}
                                         </Space>
                                     ),
@@ -379,7 +379,7 @@ export default function ExplorePage() {
                         const isHighCardinality = currentColInfo && currentColInfo.unique_count > HIGH_CARDINALITY_THRESHOLD;
                         return (
                             <div style={{ marginTop: 24 }}>
-                                <Tag color="purple">Top: {(columnStats as CategoricalColumnStats).top_value} ({(columnStats as CategoricalColumnStats).top_count})</Tag>
+                                <Tag color="cyan">Top: {(columnStats as CategoricalColumnStats).top_value} ({(columnStats as CategoricalColumnStats).top_count})</Tag>
                                 {isHighCardinality ? (
                                     <Alert
                                         type="warning"
@@ -394,7 +394,7 @@ export default function ExplorePage() {
                                             <XAxis type="number" tick={{ fontSize: 11 }} />
                                             <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
                                             <Tooltip />
-                                            <Bar dataKey="count" fill="#7c3aed" radius={[0, 4, 4, 0]} />
+                                            <Bar dataKey="count" fill="#0891b2" radius={[0, 4, 4, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 )}

@@ -35,20 +35,16 @@ const STEP_LABELS = ['Upload', 'Analysis', 'Training', 'Evaluation'];
 const STATUS_TAG_COLOR: Record<string, string> = {
     created: 'default',
     data_uploaded: 'blue',
-    data_confirmed: 'purple',
+    data_confirmed: 'cyan',
     training: 'processing',
     completed: 'green',
     failed: 'red',
 };
 
 function getStepPath(project: ProjectSummary): string {
-    const step = project.current_step;
     const id = project.project_id;
-    if (project.status === 'completed') return `/projects/${id}/evaluate`;
-    if (step <= 1 && project.status === 'created') return `/projects/${id}/upload`;
-    if (step <= 2) return `/projects/${id}/explore`;
-    if (step <= 3) return `/projects/${id}/train`;
-    return `/projects/${id}/evaluate`;
+    // Always go to project overview page
+    return `/projects/${id}`;
 }
 
 export default function DashboardPage() {
