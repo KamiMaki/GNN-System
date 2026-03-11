@@ -30,7 +30,7 @@ export default function LoginPage() {
             background: `
                 radial-gradient(ellipse 80% 60% at 50% -10%, ${token.colorPrimary}18 0%, transparent 60%),
                 radial-gradient(ellipse 50% 40% at 0% 50%, ${token.colorPrimary}0a 0%, transparent 50%),
-                radial-gradient(ellipse 50% 40% at 100% 50%, rgba(124, 58, 237, 0.06) 0%, transparent 50%)
+                radial-gradient(ellipse 50% 40% at 100% 50%, rgba(16, 185, 129, 0.05) 0%, transparent 50%)
             `,
         }}>
             <motion.div

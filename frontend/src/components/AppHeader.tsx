@@ -114,10 +114,7 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
             {user && (
                 <>
                     <Divider type="vertical" style={{ height: 28, margin: '0 4px' }} />
-                    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-                        <Text strong style={{ fontSize: 13 }}>{user.name}</Text>
-                        <Text type="secondary" style={{ fontSize: 11 }}>{user.role}</Text>
-                    </div>
+                    <Text strong style={{ fontSize: 13 }}>{user.name}</Text>
                     <Dropdown menu={userMenuItems} trigger={['click']} placement="bottomRight">
                         <Avatar
                             src={user.avatar}

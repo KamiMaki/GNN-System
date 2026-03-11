@@ -51,9 +51,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         const mockUser: User = {
             id: 'u_001',
-            name: 'Dr. Alex Chen',
+            name: 'Alex Chen',
             email: 'alex.chen@chip-design.com',
-            role: 'Senior IC Architect',
+            role: '',
             avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026024d'
         };
 
