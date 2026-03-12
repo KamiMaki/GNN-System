@@ -37,9 +37,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Simulate session check
     useEffect(() => {
-        const storedUser = localStorage.getItem('mock_user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
+        try {
+            const storedUser = localStorage.getItem('mock_user');
+            if (storedUser) {
+                const parsed = JSON.parse(storedUser);
+                if (
+                    parsed &&
+                    typeof parsed === 'object' &&
+                    typeof parsed.id === 'string' &&
+                    typeof parsed.name === 'string' &&
+                    typeof parsed.email === 'string'
+                ) {
+                    setUser(parsed as User);
+                } else {
+                    localStorage.removeItem('mock_user');
+                }
+            }
+        } catch {
+            localStorage.removeItem('mock_user');
         }
         setInitialized(true);
     }, []);

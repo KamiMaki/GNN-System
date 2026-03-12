@@ -258,6 +258,8 @@ def run_training_task(task_id: str) -> None:
             store.update_project(project_id, current_step=4, status="completed")
 
     except Exception as e:
-        store.update_task(task_id, status="FAILED", progress=0, error=str(e))
+        import logging
+        logging.exception("Training task %s failed", task_id)
+        store.update_task(task_id, status="FAILED", progress=0, error="Training failed. Check server logs for details.")
         if task.get("project_id"):
             store.update_project(task["project_id"], status="failed")

@@ -370,11 +370,12 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
         "dirty": mock_dir / "demo_dirty",
     }
 
-    # Fallback: original mock data
     if demo_id not in DEMO_DIRS:
-        demo_dir = mock_dir
-    else:
-        demo_dir = DEMO_DIRS[demo_id]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid demo_id '{demo_id}'. Must be one of: {', '.join(DEMO_DIRS)}",
+        )
+    demo_dir = DEMO_DIRS[demo_id]
 
     if not demo_dir.exists():
         raise HTTPException(status_code=404, detail=f"Demo data '{demo_id}' not found on server")
@@ -499,7 +500,7 @@ async def upload_project_data(
     try:
         nodes_bytes = await nodes_file.read()
         edges_bytes = await edges_file.read()
-        name = dataset_name or nodes_file.filename.replace(".csv", "")
+        name = dataset_name or (nodes_file.filename or "unnamed").replace(".csv", "")
 
         has_test_files = (
             nodes_test_file is not None
@@ -976,7 +977,9 @@ async def get_project_report(project_id: str):
 @router.get("/{project_id}/report/{task_id}", response_model=Report)
 async def get_experiment_report(project_id: str, task_id: str):
     """Get report for a specific training run."""
-    _project_or_404(project_id)
+    project = _project_or_404(project_id)
+    if task_id not in project.get("task_ids", []):
+        raise HTTPException(status_code=404, detail="Task not found for this project")
     task = store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")

@@ -1,6 +1,12 @@
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Literal, Union
 
+# Allowed task types across the application
+VALID_TASK_TYPES = Literal[
+    "node_classification", "node_regression",
+    "graph_classification", "graph_regression",
+]
+
 
 # ── Dataset ──
 
@@ -60,7 +66,7 @@ class CategoricalColumnStats(BaseModel):
 # ── Label Validation ──
 
 class LabelValidationRequest(BaseModel):
-    task_type: str
+    task_type: VALID_TASK_TYPES
     label_column: str
 
 
@@ -89,7 +95,7 @@ class ImputationResult(BaseModel):
 # ── Data Confirmation (gate Step 2 → Step 3) ──
 
 class ConfirmDataRequest(BaseModel):
-    task_type: str
+    task_type: VALID_TASK_TYPES
     label_column: str
 
 
@@ -219,7 +225,7 @@ class Report(BaseModel):
 
 class StartTrainingRequest(BaseModel):
     models: list[str] = []  # empty = Auto (all models)
-    n_trials: int = 150
+    n_trials: int = Field(default=150, ge=1, le=500)
 
 
 class TrainingEstimate(BaseModel):
@@ -231,7 +237,7 @@ class TrainingEstimate(BaseModel):
 
 class CreateTaskRequest(BaseModel):
     dataset_id: str
-    task_type: str = "node_classification"
+    task_type: VALID_TASK_TYPES = "node_classification"
 
 
 # Rebuild model to resolve forward reference

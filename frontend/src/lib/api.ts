@@ -262,7 +262,7 @@ export const analyzeColumn = async (
 ): Promise<ColumnStats> => {
   const params = new URLSearchParams();
   if (overrideType) params.set('override_type', overrideType);
-  const url = `${API_BASE}/api/v1/projects/${projectId}/columns/${columnName}${params.toString() ? '?' + params : ''}`;
+  const url = `${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/columns/${encodeURIComponent(columnName)}${params.toString() ? '?' + params : ''}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Analyze column failed`);
   return res.json();
@@ -366,7 +366,7 @@ export const downloadSampleData = (): string => {
 };
 
 export const loadDemoData = async (projectId: string, demoId?: string): Promise<DatasetSummary> => {
-  const params = demoId ? `?demo_id=${demoId}` : '';
+  const params = demoId ? `?demo_id=${encodeURIComponent(demoId)}` : '';
   const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/load-demo${params}`, {
     method: 'POST',
   });

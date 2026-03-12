@@ -27,6 +27,11 @@ def put_dataset(dataset_id: str, record: dict) -> None:
         datasets[dataset_id] = record
 
 
+def list_datasets() -> list[dict]:
+    with _lock:
+        return list(datasets.values())
+
+
 def get_task(task_id: str) -> dict | None:
     with _lock:
         return tasks.get(task_id)
@@ -35,6 +40,11 @@ def get_task(task_id: str) -> dict | None:
 def put_task(task_id: str, record: dict) -> None:
     with _lock:
         tasks[task_id] = record
+
+
+def list_tasks() -> list[dict]:
+    with _lock:
+        return list(tasks.values())
 
 
 def update_task(task_id: str, **kwargs: Any) -> None:
