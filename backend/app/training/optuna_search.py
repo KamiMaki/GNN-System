@@ -59,14 +59,8 @@ def run_hpo(
 
         model = get_model(model_name, **model_kwargs)
 
-        train_list = train_data if isinstance(train_data, list) else [train_data]
-        val_list = val_data if isinstance(val_data, list) else [val_data]
-
-        if sum(d.num_nodes for d in val_list) == 0:
-            val_list = train_list
-
-        train_loader = DataLoader(train_list, batch_size=len(train_list) or 32, shuffle=False)
-        val_loader = DataLoader(val_list, batch_size=len(val_list) or 32, shuffle=False)
+        train_loader = DataLoader([train_data], batch_size=1, shuffle=False)
+        val_loader = DataLoader([val_data], batch_size=1, shuffle=False)
 
         trainer = pl.Trainer(
             max_epochs=20,

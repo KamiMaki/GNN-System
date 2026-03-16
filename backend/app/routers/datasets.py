@@ -17,7 +17,7 @@ async def upload_dataset(
     nodes_file: UploadFile = File(...),
     edges_file: UploadFile = File(...),
     dataset_name: str = Form(default=""),
-    task_type: str = Form(default="node_classification"),
+    task_type: str = Form(default="node_classification", pattern=r"^(node_classification|node_regression|graph_classification|graph_regression)$"),
     nodes_test_file: UploadFile = File(None),
     edges_test_file: UploadFile = File(None),
 ):
@@ -25,7 +25,7 @@ async def upload_dataset(
     try:
         nodes_bytes = await nodes_file.read()
         edges_bytes = await edges_file.read()
-        name = dataset_name or nodes_file.filename.replace(".csv", "")
+        name = dataset_name or (nodes_file.filename or "unnamed").replace(".csv", "")
 
         parsed = parse_csv_pair(nodes_bytes, edges_bytes, name)
         explore_stats = compute_explore_stats(parsed["nodes_df"], parsed["edges_df"])
@@ -137,20 +137,20 @@ async def upload_dataset(
 @router.get("/datasets", response_model=list[DatasetSummary])
 async def list_datasets():
     """List all datasets."""
-    with store._lock:
-        return [
-            DatasetSummary(
-                dataset_id=d["dataset_id"],
-                name=d["name"],
-                num_nodes=d["num_nodes"],
-                num_edges=d["num_edges"],
-                num_features=d["num_features"],
-                num_classes=d["num_classes"],
-                is_directed=d["is_directed"],
-                task_type=d.get("task_type", "node_classification"),
-            )
-            for d in store.datasets.values()
-        ]
+    all_datasets = store.list_datasets()
+    return [
+        DatasetSummary(
+            dataset_id=d["dataset_id"],
+            name=d["name"],
+            num_nodes=d["num_nodes"],
+            num_edges=d["num_edges"],
+            num_features=d["num_features"],
+            num_classes=d["num_classes"],
+            is_directed=d["is_directed"],
+            task_type=d.get("task_type", "node_classification"),
+        )
+        for d in all_datasets
+    ]
 
 
 @router.get("/datasets/{dataset_id}/explore", response_model=ExploreData)

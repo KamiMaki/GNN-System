@@ -2,15 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, usePathname } from 'next/navigation';
-import Box from '@mui/material/Box';
-import CircularProgress from '@mui/material/CircularProgress';
+import { Skeleton } from 'antd';
 import PipelineStepper from '@/components/PipelineStepper';
 import { getProject, ProjectDetail } from '@/lib/api';
-
-const COLORS = {
-    bg: '#020617',
-    cyan: '#06b6d4',
-};
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
     const params = useParams();
@@ -19,7 +13,6 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     const [project, setProject] = useState<ProjectDetail | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Re-fetch project on route change to keep stepper in sync
     useEffect(() => {
         if (!projectId) return;
         setLoading(true);
@@ -31,22 +24,27 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
     if (loading) {
         return (
-            <Box sx={{ minHeight: '100vh', bgcolor: COLORS.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <CircularProgress sx={{ color: COLORS.cyan }} />
-            </Box>
+            <div style={{ minHeight: '100vh' }}>
+                <div style={{ padding: '12px 24px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                    <Skeleton.Input active style={{ width: 600 }} />
+                </div>
+                <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+                    <Skeleton active paragraph={{ rows: 8 }} />
+                </div>
+            </div>
         );
     }
 
     if (!project) {
         return (
-            <Box sx={{ minHeight: '100vh', bgcolor: COLORS.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+            <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 Project not found.
-            </Box>
+            </div>
         );
     }
 
     return (
-        <Box sx={{ minHeight: '100vh', bgcolor: COLORS.bg }}>
+        <div style={{ minHeight: '100vh' }}>
             <PipelineStepper
                 currentStep={project.current_step}
                 projectName={project.name}
@@ -54,6 +52,6 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
                 status={project.status}
             />
             {children}
-        </Box>
+        </div>
     );
 }

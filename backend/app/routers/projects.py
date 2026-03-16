@@ -26,6 +26,7 @@ from app.schemas.api_models import (
     ConfirmDataRequest,
     CorrelationRequest,
     CreateProjectRequest,
+    UpdateProjectRequest,
     DatasetSummary,
     GenericExploreData,
     ImputationRequest,
@@ -87,6 +88,7 @@ def _to_summary(p: dict) -> ProjectSummary:
         name=p["name"],
         tags=p.get("tags", []),
         created_at=p["created_at"],
+        updated_at=p.get("updated_at", p["created_at"]),
         current_step=p.get("current_step", 1),
         status=p.get("status", "created"),
         dataset_id=p.get("dataset_id"),
@@ -99,11 +101,13 @@ def _to_summary(p: dict) -> ProjectSummary:
 @router.post("/", response_model=ProjectSummary)
 async def create_project(body: CreateProjectRequest):
     project_id = str(uuid.uuid4())
+    now = _now_iso()
     record = {
         "project_id": project_id,
         "name": body.name,
         "tags": body.tags,
-        "created_at": _now_iso(),
+        "created_at": now,
+        "updated_at": now,
         "current_step": 1,
         "status": "created",
         "dataset_id": None,
@@ -268,6 +272,18 @@ async def delete_project(project_id: str):
     return {"detail": "Project deleted"}
 
 
+@router.patch("/{project_id}", response_model=ProjectSummary)
+async def update_project(project_id: str, body: UpdateProjectRequest):
+    _project_or_404(project_id)
+    updates: dict = {"updated_at": _now_iso()}
+    if body.name is not None:
+        updates["name"] = body.name
+    if body.tags is not None:
+        updates["tags"] = body.tags
+    store.update_project(project_id, **updates)
+    return _to_summary(store.get_project(project_id))
+
+
 # ── Step 1: Upload Data ──
 
 
@@ -354,11 +370,12 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
         "dirty": mock_dir / "demo_dirty",
     }
 
-    # Fallback: original mock data
     if demo_id not in DEMO_DIRS:
-        demo_dir = mock_dir
-    else:
-        demo_dir = DEMO_DIRS[demo_id]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid demo_id '{demo_id}'. Must be one of: {', '.join(DEMO_DIRS)}",
+        )
+    demo_dir = DEMO_DIRS[demo_id]
 
     if not demo_dir.exists():
         raise HTTPException(status_code=404, detail=f"Demo data '{demo_id}' not found on server")
@@ -483,7 +500,7 @@ async def upload_project_data(
     try:
         nodes_bytes = await nodes_file.read()
         edges_bytes = await edges_file.read()
-        name = dataset_name or nodes_file.filename.replace(".csv", "")
+        name = dataset_name or (nodes_file.filename or "unnamed").replace(".csv", "")
 
         has_test_files = (
             nodes_test_file is not None
@@ -787,6 +804,7 @@ async def confirm_data(project_id: str, body: ConfirmDataRequest):
         label_column=body.label_column,
         current_step=3,
         status="data_confirmed",
+        updated_at=_now_iso(),
     )
 
     # Update dataset task_type and num_classes
@@ -959,7 +977,9 @@ async def get_project_report(project_id: str):
 @router.get("/{project_id}/report/{task_id}", response_model=Report)
 async def get_experiment_report(project_id: str, task_id: str):
     """Get report for a specific training run."""
-    _project_or_404(project_id)
+    project = _project_or_404(project_id)
+    if task_id not in project.get("task_ids", []):
+        raise HTTPException(status_code=404, detail="Task not found for this project")
     task = store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")

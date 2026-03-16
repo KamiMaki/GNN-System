@@ -1,103 +1,43 @@
-// src/theme/theme.ts
 'use client';
-import { createTheme, ThemeOptions, PaletteMode } from '@mui/material/styles';
+import type { ThemeConfig } from 'antd';
+import { theme as antdTheme } from 'antd';
 
-// --- Dark Theme Constants ---
-const neonPrimary = '#00f2ff';
-const neonSecondary = '#7000ff';
-const glassBackgroundDark = 'rgba(15, 23, 42, 0.6)';
-const bgDark = '#0f172a';
-
-// --- Light Theme Constants ---
-const lightPrimary = '#0891b2'; // Darker cyan for light mode
-const lightSecondary = '#7c3aed';
-const glassBackgroundLight = 'rgba(255, 255, 255, 0.7)';
-const bgLight = '#f1f5f9';
-
-const getDesignTokens = (mode: PaletteMode): ThemeOptions => ({
-  palette: {
-    mode,
-    ...(mode === 'dark'
-      ? {
-        // Dark Mode Palette
-        primary: {
-          main: neonPrimary,
-          contrastText: '#000',
-        },
-        secondary: {
-          main: neonSecondary,
-        },
-        background: {
-          default: 'transparent', // Handled by global CSS (or RootLayout)
-          paper: glassBackgroundDark,
-        },
-        text: {
-          primary: '#f8fafc',
-          secondary: '#94a3b8',
-        },
-      }
-      : {
-        // Light Mode Palette
-        primary: {
-          main: lightPrimary,
-          contrastText: '#fff',
-        },
-        secondary: {
-          main: lightSecondary,
-        },
-        background: {
-          default: bgLight,
-          paper: glassBackgroundLight,
-        },
-        text: {
-          primary: '#1e293b', // Slate 800
-          secondary: '#64748b', // Slate 500
-        },
-      }),
-  },
-  shape: {
-    borderRadius: 16,
-  },
-  typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-    h5: { fontWeight: 700 },
-    h6: { fontWeight: 600 },
+export const getTheme = (mode: 'light' | 'dark'): ThemeConfig => ({
+  algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+  token: {
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    borderRadius: 8,
+    colorPrimary: '#0891b2',
+    colorSuccess: '#10b981',
+    colorWarning: '#f59e0b',
+    colorError: '#ef4444',
+    colorInfo: '#06b6d4',
+    wireframe: false,
   },
   components: {
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-          backdropFilter: 'blur(20px)',
-          border: mode === 'dark' ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.05)',
-          boxShadow: mode === 'dark' ? '0 4px 30px rgba(0, 0, 0, 0.2)' : '0 4px 30px rgba(0, 0, 0, 0.05)',
-          transition: 'all 0.3s ease-in-out',
-        },
-      },
+    Card: {
+      borderRadiusLG: 12,
+      boxShadowTertiary:
+        mode === 'light'
+          ? '0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06)'
+          : '0 1px 3px 0 rgba(0, 0, 0, 0.3)',
     },
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          borderRadius: '30px',
-          textTransform: 'none',
-          fontWeight: 600,
-        },
-      },
+    Button: {
+      borderRadius: 8,
+      controlHeight: 36,
+      primaryShadow: '0 2px 4px -1px rgba(8, 145, 178, 0.3)',
     },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          background: mode === 'dark'
-            ? `linear-gradient(135deg, ${glassBackgroundDark} 0%, rgba(20, 30, 50, 0.7) 100%)`
-            : `linear-gradient(135deg, ${glassBackgroundLight} 0%, rgba(241, 245, 249, 0.8) 100%)`,
-          '&:hover': {
-            borderColor: mode === 'dark' ? 'rgba(0, 242, 255, 0.3)' : 'rgba(8, 145, 178, 0.3)',
-            boxShadow: mode === 'dark' ? '0 0 25px rgba(0, 242, 255, 0.1)' : '0 0 25px rgba(8, 145, 178, 0.1)',
-          },
-        },
-      },
+    Steps: {
+      dotCurrentSize: 10,
+    },
+    Table: {
+      borderRadiusLG: 12,
+    },
+    Input: {
+      borderRadius: 8,
+    },
+    Select: {
+      borderRadius: 8,
     },
   },
 });
-
-export const getTheme = (mode: PaletteMode) => createTheme(getDesignTokens(mode));

@@ -3,5 +3,7 @@ import * as React from 'react';
 
 export const ColorModeContext = React.createContext({
     toggleColorMode: () => { },
-    mode: 'dark' as 'light' | 'dark',
+    mode: 'light' as 'light' | 'dark',
 });
+
+export const useColorMode = () => React.useContext(ColorModeContext);

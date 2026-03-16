@@ -2,89 +2,56 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import Box from '@mui/material/Box';
-import Container from '@mui/material/Container';
-import Typography from '@mui/material/Typography';
-import Paper from '@mui/material/Paper';
-import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
-import Stack from '@mui/material/Stack';
-import Alert from '@mui/material/Alert';
-
-import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme } from 'antd';
+import { TrophyOutlined } from '@ant-design/icons';
 
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
     BarChart, Bar,
-    ScatterChart, Scatter, Cell as RechartsCell,
+    ScatterChart, Scatter,
 } from 'recharts';
 
 import { getProjectReport, getExperimentReport, Report, SplitMetrics } from '@/lib/api';
 
-const COLORS = {
-    cyan: '#06b6d4',
-    teal: '#14b8a6',
-    blue: '#3b82f6',
-    violet: '#8b5cf6',
-    red: '#ef4444',
-    green: '#22c55e',
-    yellow: '#eab308',
-    glass: 'rgba(15, 23, 42, 0.4)',
-    glassBorder: 'rgba(255, 255, 255, 0.08)',
-};
+const { Title, Text } = Typography;
 
-const glassCard = {
-    bgcolor: COLORS.glass,
-    backdropFilter: 'blur(20px)',
-    border: `1px solid ${COLORS.glassBorder}`,
-    borderRadius: 3,
-    p: 3,
-};
-
-function MetricCard({ label, value, color }: { label: string; value: number | null; color: string }) {
+function MetricCard({ label, value, color }: { label: string; value: number | null; color?: string }) {
     if (value === null || value === undefined) return null;
     return (
-        <Paper sx={{ ...glassCard, textAlign: 'center', flex: 1, minWidth: 120 }}>
-            <Typography variant="h4" sx={{ color, fontWeight: 800 }}>
-                {typeof value === 'number' ? (value < 1 ? value.toFixed(4) : value.toFixed(2)) : value}
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#94a3b8', letterSpacing: 1, textTransform: 'uppercase' }}>
-                {label}
-            </Typography>
-        </Paper>
+        <Card size="small">
+            <Statistic
+                title={label}
+                value={typeof value === 'number' ? (value < 1 ? value.toFixed(4) : value.toFixed(2)) : value}
+                valueStyle={color ? { color } : undefined}
+            />
+        </Card>
     );
 }
 
-function MetricsRow({ label, metrics, color }: { label: string; metrics: SplitMetrics; color: string }) {
+function MetricsRow({ label, metrics }: { label: string; metrics: SplitMetrics }) {
     const isClassification = metrics.accuracy !== null;
     return (
-        <Box>
-            <Typography variant="overline" sx={{ color, letterSpacing: 2, fontWeight: 700, mb: 1, display: 'block' }}>
+        <div>
+            <Text strong style={{ display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 2, fontSize: 12 }}>
                 {label}
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            </Text>
+            <Row gutter={[12, 12]}>
                 {isClassification ? (
                     <>
-                        <MetricCard label="Accuracy" value={metrics.accuracy} color={color} />
-                        <MetricCard label="F1 Score" value={metrics.f1_score} color={color} />
-                        <MetricCard label="Precision" value={metrics.precision} color={color} />
-                        <MetricCard label="Recall" value={metrics.recall} color={color} />
+                        <Col xs={12} sm={6}><MetricCard label="Accuracy" value={metrics.accuracy} /></Col>
+                        <Col xs={12} sm={6}><MetricCard label="F1 Score" value={metrics.f1_score} /></Col>
+                        <Col xs={12} sm={6}><MetricCard label="Precision" value={metrics.precision} /></Col>
+                        <Col xs={12} sm={6}><MetricCard label="Recall" value={metrics.recall} /></Col>
                     </>
                 ) : (
                     <>
-                        <MetricCard label="MSE" value={metrics.mse} color={color} />
-                        <MetricCard label="MAE" value={metrics.mae} color={color} />
-                        <MetricCard label="R² Score" value={metrics.r2_score} color={color} />
+                        <Col xs={12} sm={8}><MetricCard label="MSE" value={metrics.mse} /></Col>
+                        <Col xs={12} sm={8}><MetricCard label="MAE" value={metrics.mae} /></Col>
+                        <Col xs={12} sm={8}><MetricCard label="R² Score" value={metrics.r2_score} /></Col>
                     </>
                 )}
-            </Box>
-        </Box>
+            </Row>
+        </div>
     );
 }
 
@@ -93,6 +60,7 @@ export default function EvaluatePage() {
     const searchParams = useSearchParams();
     const projectId = params.id as string;
     const taskIdParam = searchParams.get('task_id');
+    const { token } = theme.useToken();
 
     const [report, setReport] = useState<Report | null>(null);
     const [loading, setLoading] = useState(true);
@@ -112,224 +80,234 @@ export default function EvaluatePage() {
 
     if (loading) {
         return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-                <CircularProgress sx={{ color: COLORS.cyan }} />
-            </Box>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
+                <Spin size="large" />
+            </div>
         );
     }
 
     if (error || !report) {
         return (
-            <Container maxWidth="lg" sx={{ py: 4 }}>
-                <Alert severity="error">{error || 'Report not available. Training may not be completed.'}</Alert>
-            </Container>
+            <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+                <Alert type="error" showIcon message={error || 'Report not available. Training may not be completed.'} />
+            </div>
         );
     }
 
     const isClassification = report.task_type.includes('classification');
 
+    const bestConfigColumns = [
+        { title: 'Model', dataIndex: 'model', key: 'model' },
+        { title: 'Hidden Dim', dataIndex: 'hidden_dim', key: 'hidden_dim' },
+        { title: 'Num Layers', dataIndex: 'num_layers', key: 'num_layers' },
+        { title: 'Dropout', dataIndex: 'dropout', key: 'dropout' },
+        { title: 'Learning Rate', dataIndex: 'lr', key: 'lr' },
+    ];
+
+    const bestConfigData = report.best_config ? [{
+        key: '1',
+        model: report.best_config.model_name.toUpperCase(),
+        hidden_dim: report.best_config.hidden_dim,
+        num_layers: report.best_config.num_layers,
+        dropout: report.best_config.dropout,
+        lr: report.best_config.lr,
+    }] : [];
+
+    const leaderboardColumns = [
+        {
+            title: 'Rank', dataIndex: 'rank', key: 'rank',
+            render: (_: any, __: any, i: number) => i === 0 ? '\ud83e\udd47' : i === 1 ? '\ud83e\udd48' : i === 2 ? '\ud83e\udd49' : `#${i + 1}`,
+        },
+        { title: 'Trial', dataIndex: 'trial', key: 'trial' },
+        { title: 'Model', dataIndex: 'model', key: 'model', render: (v: string) => <Text strong>{v.toUpperCase()}</Text> },
+        { title: 'Hidden Dim', dataIndex: 'hidden_dim', key: 'hidden_dim' },
+        { title: 'Layers', dataIndex: 'num_layers', key: 'num_layers' },
+        { title: 'Dropout', dataIndex: 'dropout', key: 'dropout' },
+        { title: 'LR', dataIndex: 'lr', key: 'lr' },
+        { title: 'Val Loss', dataIndex: 'val_loss', key: 'val_loss', render: (v: number) => v.toFixed(4) },
+    ];
+
+    const leaderboardData = (report.leaderboard || []).map((entry, i) => ({
+        key: `${entry.trial}`,
+        trial: entry.trial,
+        model: entry.model,
+        hidden_dim: entry.hidden_dim,
+        num_layers: entry.num_layers,
+        dropout: entry.dropout,
+        lr: entry.lr,
+        val_loss: entry.val_loss,
+    }));
+
     return (
-        <Container maxWidth="lg" sx={{ py: 4 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-                <Box>
-                    <Typography variant="h4" sx={{ color: '#fff', fontWeight: 800 }}>
-                        MODEL EVALUATION
-                    </Typography>
-                    <Typography sx={{ color: '#94a3b8' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 24,
+                paddingBottom: 16,
+                borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            }}>
+                <div>
+                    <Title level={3} style={{ margin: 0 }}>Model Evaluation</Title>
+                    <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                         Task: {report.task_type.replace('_', ' ').toUpperCase()}
-                    </Typography>
-                </Box>
+                    </Text>
+                </div>
                 {report.best_config && (
-                    <Chip
-                        icon={<EmojiEventsIcon />}
-                        label={`Best: ${report.best_config.model_name.toUpperCase()}`}
-                        sx={{ bgcolor: 'rgba(234, 179, 8, 0.15)', color: COLORS.yellow, fontWeight: 700, fontSize: '0.9rem', height: 36 }}
-                    />
+                    <Tag icon={<TrophyOutlined />} color="gold" style={{ fontSize: 13, padding: '4px 12px' }}>
+                        Best: {report.best_config.model_name.toUpperCase()}
+                    </Tag>
                 )}
-            </Box>
+            </div>
 
-            <Stack spacing={4}>
-                {/* ── Performance Metrics ── */}
-                <Paper sx={glassCard}>
-                    <Typography variant="overline" sx={{ color: COLORS.cyan, letterSpacing: 2, fontWeight: 700, mb: 3, display: 'block' }}>
-                        PERFORMANCE METRICS
-                    </Typography>
-                    <Stack spacing={3}>
-                        <MetricsRow label="Training" metrics={report.train_metrics} color={COLORS.cyan} />
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                {/* Performance Metrics */}
+                <Card title="Performance Metrics">
+                    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                        <MetricsRow label="Training" metrics={report.train_metrics} />
                         {report.val_metrics && (
-                            <MetricsRow label="Validation" metrics={report.val_metrics} color={COLORS.violet} />
+                            <MetricsRow label="Validation" metrics={report.val_metrics} />
                         )}
-                        <MetricsRow label="Test" metrics={report.test_metrics} color={COLORS.teal} />
-                    </Stack>
-                </Paper>
+                        <MetricsRow label="Test" metrics={report.test_metrics} />
+                    </Space>
+                </Card>
 
-                {/* ── Task-Specific Chart ── */}
+                {/* Confusion Matrix — dynamic NxN */}
                 {isClassification && report.confusion_matrix && (
-                    <Paper sx={glassCard}>
-                        <Typography variant="overline" sx={{ color: COLORS.cyan, letterSpacing: 2, fontWeight: 700, mb: 2, display: 'block' }}>
-                            CONFUSION MATRIX
-                        </Typography>
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: 1, maxWidth: 500, mx: 'auto' }}>
-                            {/* Header */}
-                            <Box />
-                            <Box sx={{ textAlign: 'center', p: 1 }}>
-                                <Typography variant="caption" sx={{ color: '#94a3b8' }}>Pred. Negative</Typography>
-                            </Box>
-                            <Box sx={{ textAlign: 'center', p: 1 }}>
-                                <Typography variant="caption" sx={{ color: '#94a3b8' }}>Pred. Positive</Typography>
-                            </Box>
-                            {/* Rows */}
-                            {report.confusion_matrix.map((row, i) => (
-                                <React.Fragment key={i}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', p: 1 }}>
-                                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>{row.actual}</Typography>
-                                    </Box>
-                                    {/* predicted_negative: correct if actual=Negative, wrong if actual=Positive */}
-                                    <Box sx={{
-                                        textAlign: 'center', p: 2, borderRadius: 2,
-                                        bgcolor: row.actual === 'Negative' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    <Card title="Confusion Matrix">
+                        {(() => {
+                            const { labels, matrix } = report.confusion_matrix;
+                            const n = labels.length;
+                            const maxVal = Math.max(...matrix.flat(), 1);
+                            return (
+                                <div style={{ overflowX: 'auto' }}>
+                                    <div style={{
+                                        display: 'inline-flex',
+                                        flexDirection: 'column',
+                                        gap: 0,
+                                        margin: '0 auto',
+                                        minWidth: Math.max(500, 160 + n * 100),
                                     }}>
-                                        <Typography variant="h5" sx={{ color: row.actual === 'Negative' ? COLORS.green : COLORS.red, fontWeight: 700 }}>
-                                            {row.predicted_negative}
-                                        </Typography>
-                                    </Box>
-                                    {/* predicted_positive: correct if actual=Positive, wrong if actual=Negative */}
-                                    <Box sx={{
-                                        textAlign: 'center', p: 2, borderRadius: 2,
-                                        bgcolor: row.actual === 'Positive' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                                    }}>
-                                        <Typography variant="h5" sx={{ color: row.actual === 'Positive' ? COLORS.green : COLORS.red, fontWeight: 700 }}>
-                                            {row.predicted_positive}
-                                        </Typography>
-                                    </Box>
-                                </React.Fragment>
-                            ))}
-                        </Box>
-                    </Paper>
+                                        {/* Predicted label */}
+                                        <div style={{ textAlign: 'center', marginBottom: 8, paddingLeft: 160 }}>
+                                            <Text type="secondary" style={{ fontSize: 13, fontWeight: 600, letterSpacing: 1 }}>PREDICTED</Text>
+                                        </div>
+                                        {/* Header row */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: `160px repeat(${n}, minmax(90px, 1fr))`, gap: 6 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+                                                <Text type="secondary" style={{ fontSize: 12 }}>Actual \ Pred.</Text>
+                                            </div>
+                                            {labels.map(label => (
+                                                <div key={label} style={{ textAlign: 'center', padding: 10 }}>
+                                                    <Text strong style={{ fontSize: 13 }}>{label}</Text>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Data rows */}
+                                        {matrix.map((row, i) => (
+                                            <div key={i} style={{ display: 'grid', gridTemplateColumns: `160px repeat(${n}, minmax(90px, 1fr))`, gap: 6 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px' }}>
+                                                    <Text strong style={{ fontSize: 13 }}>{labels[i]}</Text>
+                                                </div>
+                                                {row.map((val, j) => {
+                                                    const isDiag = i === j;
+                                                    const intensity = val / maxVal;
+                                                    const bg = isDiag
+                                                        ? `color-mix(in srgb, ${token.colorSuccess} ${Math.round(intensity * 60 + 15)}%, ${token.colorBgContainer})`
+                                                        : val > 0
+                                                            ? `color-mix(in srgb, ${token.colorError} ${Math.round(intensity * 60 + 15)}%, ${token.colorBgContainer})`
+                                                            : token.colorBgContainer;
+                                                    return (
+                                                        <div key={j} style={{
+                                                            textAlign: 'center',
+                                                            padding: '18px 14px',
+                                                            borderRadius: token.borderRadius,
+                                                            background: bg,
+                                                            border: isDiag
+                                                                ? `2px solid ${token.colorSuccess}40`
+                                                                : `1px solid ${token.colorBorderSecondary}`,
+                                                            transition: 'transform 0.15s ease',
+                                                        }}>
+                                                            <div style={{ fontSize: 20, fontWeight: 700, margin: 0, lineHeight: 1.2 }}>{val}</div>
+                                                            <Text type="secondary" style={{ fontSize: 11 }}>
+                                                                {(val / row.reduce((a, b) => a + b, 0) * 100).toFixed(1)}%
+                                                            </Text>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {/* Actual label */}
+                                    <div style={{ position: 'relative', marginTop: 8 }}>
+                                        <Text type="secondary" style={{ fontSize: 13, fontWeight: 600, letterSpacing: 1, paddingLeft: 40 }}>ACTUAL</Text>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </Card>
                 )}
 
+                {/* Residual Plot */}
                 {!isClassification && report.residual_data && report.residual_data.length > 0 && (
-                    <Paper sx={glassCard}>
-                        <Typography variant="overline" sx={{ color: COLORS.cyan, letterSpacing: 2, fontWeight: 700, mb: 2, display: 'block' }}>
-                            RESIDUAL PLOT (ACTUAL vs PREDICTED)
-                        </Typography>
+                    <Card title="Residual Plot (Actual vs Predicted)">
                         <ResponsiveContainer width="100%" height={350}>
                             <ScatterChart>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                                <XAxis dataKey="actual" name="Actual" tick={{ fill: '#94a3b8', fontSize: 11 }} label={{ value: 'Actual', fill: '#64748b', position: 'bottom' }} />
-                                <YAxis dataKey="predicted" name="Predicted" tick={{ fill: '#94a3b8', fontSize: 11 }} label={{ value: 'Predicted', fill: '#64748b', angle: -90, position: 'left' }} />
-                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: `1px solid ${COLORS.glassBorder}`, color: '#fff' }} />
-                                <Scatter data={report.residual_data} fill={COLORS.cyan} opacity={0.6} />
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="actual" name="Actual" tick={{ fontSize: 11 }} label={{ value: 'Actual', position: 'bottom' }} />
+                                <YAxis dataKey="predicted" name="Predicted" tick={{ fontSize: 11 }} label={{ value: 'Predicted', angle: -90, position: 'left' }} />
+                                <Tooltip />
+                                <Scatter data={report.residual_data} fill={token.colorPrimary} opacity={0.6} />
                             </ScatterChart>
                         </ResponsiveContainer>
-                    </Paper>
+                    </Card>
                 )}
 
-                {/* ── Training History ── */}
+                {/* Training History */}
                 {report.history && report.history.length > 0 && (
-                    <Paper sx={glassCard}>
-                        <Typography variant="overline" sx={{ color: COLORS.cyan, letterSpacing: 2, fontWeight: 700, mb: 2, display: 'block' }}>
-                            TRAINING HISTORY
-                        </Typography>
+                    <Card title="Training History">
                         <ResponsiveContainer width="100%" height={340}>
                             <LineChart data={report.history} margin={{ top: 5, right: 10, bottom: 25, left: 10 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                                <XAxis dataKey="epoch" tick={{ fill: '#64748b', fontSize: 11 }} label={{ value: 'Epoch', fill: '#64748b', position: 'insideBottom', offset: -15 }} />
-                                <YAxis yAxisId="left" tick={{ fill: '#64748b', fontSize: 11 }} />
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="epoch" tick={{ fontSize: 11 }} label={{ value: 'Epoch', position: 'insideBottom', offset: -15 }} />
+                                <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                                 {isClassification && (
-                                    <YAxis yAxisId="right" orientation="right" tick={{ fill: '#64748b', fontSize: 11 }} domain={[0, 1]} />
+                                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} domain={[0, 1]} />
                                 )}
-                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: `1px solid ${COLORS.glassBorder}`, color: '#fff' }} />
+                                <Tooltip />
                                 <Legend verticalAlign="top" />
-                                <Line type="monotone" dataKey="loss" name="Train Loss" stroke={COLORS.cyan} strokeWidth={2} dot={false} yAxisId="left" />
-                                <Line type="monotone" dataKey="val_loss" name="Val Loss" stroke={COLORS.teal} strokeWidth={2} dot={false} yAxisId="left" />
+                                <Line type="monotone" dataKey="loss" name="Train Loss" stroke={token.colorPrimary} strokeWidth={2} dot={false} yAxisId="left" />
+                                <Line type="monotone" dataKey="val_loss" name="Val Loss" stroke={token.colorInfo} strokeWidth={2} dot={false} yAxisId="left" />
                                 {isClassification && (
-                                    <Line type="monotone" dataKey="accuracy" name="Accuracy" stroke={COLORS.green} strokeWidth={2} dot={false} yAxisId="right" />
+                                    <Line type="monotone" dataKey="accuracy" name="Accuracy" stroke={token.colorSuccess} strokeWidth={2} dot={false} yAxisId="right" />
                                 )}
                             </LineChart>
                         </ResponsiveContainer>
-                    </Paper>
+                    </Card>
                 )}
 
-                {/* ── Best Config ── */}
+                {/* Best Config */}
                 {report.best_config && (
-                    <Paper sx={glassCard}>
-                        <Typography variant="overline" sx={{ color: COLORS.cyan, letterSpacing: 2, fontWeight: 700, mb: 2, display: 'block' }}>
-                            BEST MODEL CONFIGURATION
-                        </Typography>
-                        <TableContainer>
-                            <Table size="small">
-                                <TableHead>
-                                    <TableRow>
-                                        {['Model', 'Hidden Dim', 'Num Layers', 'Dropout', 'Learning Rate'].map(h => (
-                                            <TableCell key={h} sx={{ color: '#94a3b8', borderColor: COLORS.glassBorder, fontWeight: 700 }}>
-                                                {h}
-                                            </TableCell>
-                                        ))}
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    <TableRow>
-                                        <TableCell sx={{ color: COLORS.cyan, borderColor: COLORS.glassBorder, fontWeight: 700 }}>
-                                            {report.best_config.model_name.toUpperCase()}
-                                        </TableCell>
-                                        <TableCell sx={{ color: '#fff', borderColor: COLORS.glassBorder }}>{report.best_config.hidden_dim}</TableCell>
-                                        <TableCell sx={{ color: '#fff', borderColor: COLORS.glassBorder }}>{report.best_config.num_layers}</TableCell>
-                                        <TableCell sx={{ color: '#fff', borderColor: COLORS.glassBorder }}>{report.best_config.dropout}</TableCell>
-                                        <TableCell sx={{ color: '#fff', borderColor: COLORS.glassBorder }}>{report.best_config.lr}</TableCell>
-                                    </TableRow>
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    </Paper>
+                    <Card title="Best Model Configuration">
+                        <Table columns={bestConfigColumns} dataSource={bestConfigData} pagination={false} size="small" />
+                    </Card>
                 )}
 
-                {/* ── Leaderboard ── */}
+                {/* Leaderboard */}
                 {report.leaderboard && report.leaderboard.length > 0 && (
-                    <Paper sx={glassCard}>
-                        <Typography variant="overline" sx={{ color: COLORS.cyan, letterSpacing: 2, fontWeight: 700, mb: 2, display: 'block' }}>
-                            TRAINING LEADERBOARD
-                        </Typography>
-                        <TableContainer sx={{ maxHeight: 500 }}>
-                            <Table size="small" stickyHeader>
-                                <TableHead>
-                                    <TableRow>
-                                        {['Rank', 'Trial', 'Model', 'Hidden Dim', 'Layers', 'Dropout', 'LR', 'Val Loss'].map(h => (
-                                            <TableCell key={h} sx={{
-                                                color: '#94a3b8', fontWeight: 700, fontSize: '0.75rem',
-                                                bgcolor: '#0f172a', borderColor: COLORS.glassBorder,
-                                            }}>
-                                                {h}
-                                            </TableCell>
-                                        ))}
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {report.leaderboard.map((entry, i) => (
-                                        <TableRow key={entry.trial} sx={{
-                                            bgcolor: i === 0 ? 'rgba(234, 179, 8, 0.05)' : 'transparent',
-                                            '&:hover': { bgcolor: 'rgba(6, 182, 212, 0.05)' },
-                                        }}>
-                                            <TableCell sx={{ color: i === 0 ? COLORS.yellow : '#fff', borderColor: COLORS.glassBorder, fontWeight: i === 0 ? 700 : 400 }}>
-                                                {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
-                                            </TableCell>
-                                            <TableCell sx={{ color: '#94a3b8', borderColor: COLORS.glassBorder }}>{entry.trial}</TableCell>
-                                            <TableCell sx={{ color: COLORS.cyan, borderColor: COLORS.glassBorder, fontWeight: 600 }}>{entry.model.toUpperCase()}</TableCell>
-                                            <TableCell sx={{ color: '#fff', borderColor: COLORS.glassBorder }}>{entry.hidden_dim}</TableCell>
-                                            <TableCell sx={{ color: '#fff', borderColor: COLORS.glassBorder }}>{entry.num_layers}</TableCell>
-                                            <TableCell sx={{ color: '#fff', borderColor: COLORS.glassBorder }}>{entry.dropout}</TableCell>
-                                            <TableCell sx={{ color: '#fff', borderColor: COLORS.glassBorder }}>{entry.lr}</TableCell>
-                                            <TableCell sx={{ color: i === 0 ? COLORS.green : '#fff', borderColor: COLORS.glassBorder, fontWeight: 600 }}>
-                                                {entry.val_loss.toFixed(4)}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    </Paper>
+                    <Card title="Training Leaderboard">
+                        <Table
+                            columns={leaderboardColumns}
+                            dataSource={leaderboardData}
+                            pagination={false}
+                            size="small"
+                            scroll={{ y: 500 }}
+                            rowClassName={(_, i) => i === 0 ? 'ant-table-row-selected' : ''}
+                        />
+                    </Card>
                 )}
-            </Stack>
-        </Container>
+            </Space>
+        </div>
     );
 }

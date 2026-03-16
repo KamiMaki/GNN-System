@@ -14,6 +14,7 @@ interface User {
 interface AuthContextType {
     user: User | null;
     isLoading: boolean;
+    initialized: boolean;
     login: () => Promise<void>;
     logout: () => void;
 }
@@ -21,6 +22,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
     user: null,
     isLoading: false,
+    initialized: false,
     login: async () => { },
     logout: () => { },
 });
@@ -30,14 +32,31 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [initialized, setInitialized] = useState(false);
     const router = useRouter();
 
     // Simulate session check
     useEffect(() => {
-        const storedUser = localStorage.getItem('mock_user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
+        try {
+            const storedUser = localStorage.getItem('mock_user');
+            if (storedUser) {
+                const parsed = JSON.parse(storedUser);
+                if (
+                    parsed &&
+                    typeof parsed === 'object' &&
+                    typeof parsed.id === 'string' &&
+                    typeof parsed.name === 'string' &&
+                    typeof parsed.email === 'string'
+                ) {
+                    setUser(parsed as User);
+                } else {
+                    localStorage.removeItem('mock_user');
+                }
+            }
+        } catch {
+            localStorage.removeItem('mock_user');
         }
+        setInitialized(true);
     }, []);
 
     const login = async () => {
@@ -47,9 +66,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         const mockUser: User = {
             id: 'u_001',
-            name: 'Dr. Alex Chen',
+            name: 'Alex Chen',
             email: 'alex.chen@chip-design.com',
-            role: 'Senior IC Architect',
+            role: '',
             avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026024d'
         };
 
@@ -66,7 +85,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+        <AuthContext.Provider value={{ user, isLoading, initialized, login, logout }}>
             {children}
         </AuthContext.Provider>
     );

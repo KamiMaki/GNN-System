@@ -47,8 +47,7 @@ def compute_generic_explore(nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> d
     numeric_cols = [c for c in numeric_cols if c.lower() not in ("node_id", "id", "index")]
     # Pick top 5 by variance
     if len(numeric_cols) > 5:
-        numeric_df = nodes_df[numeric_cols].apply(pd.to_numeric, errors='coerce')
-        variances = numeric_df.var().sort_values(ascending=False)
+        variances = nodes_df[numeric_cols].var().sort_values(ascending=False)
         numeric_cols = list(variances.index[:5])
 
     correlation = compute_correlation(nodes_df, numeric_cols) if numeric_cols else []

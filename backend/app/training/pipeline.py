@@ -7,6 +7,7 @@ from torch_geometric.loader import DataLoader
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score,
+    confusion_matrix as sklearn_confusion_matrix,
 )
 
 from app.core import store
@@ -37,22 +38,23 @@ def _compute_regression_metrics(y_true, y_pred):
     }
 
 
-def _predict(model, loader, task_type):
-    """Run model inference on a DataLoader. Returns numpy arrays (preds/outputs, y_true)."""
+def _predict(model, data, task_type):
+    """Run model inference on a Data object. Returns numpy arrays (preds/outputs, y_true)."""
+    is_graph = task_type.startswith("graph")
     model.eval()
-    all_preds = []
-    all_y = []
     with torch.no_grad():
-        for batch in loader:
-            batch_tensor = batch.batch if hasattr(batch, "batch") else None
-            out = model(batch.x, batch.edge_index, batch.edge_attr, batch=batch_tensor)
-            if task_type.endswith("regression"):
-                preds = out.cpu().numpy()
-            else:
-                preds = out.argmax(dim=-1).cpu().numpy()
-            all_preds.append(preds)
-            all_y.append(batch.y.cpu().numpy())
-    return np.concatenate(all_preds), np.concatenate(all_y)
+        if is_graph:
+            batch_tensor = torch.zeros(data.x.size(0), dtype=torch.long)
+            out = model(data.x, data.edge_index, data.edge_attr, batch=batch_tensor)
+        else:
+            out = model(data.x, data.edge_index, data.edge_attr)
+
+    y_true = data.y.numpy()
+    if task_type.endswith("regression"):
+        y_pred = out.numpy()
+    else:
+        y_pred = out.argmax(dim=-1).numpy()
+    return y_pred, y_true
 
 
 def run_training_task(task_id: str) -> None:
@@ -99,9 +101,7 @@ def run_training_task(task_id: str) -> None:
         else:
             raise ValueError("Dataset has no PyG data and no label_column specified")
 
-        # Get list property if single graph for seamless handling
-        train_x_shape = train_data[0].x.shape[1] if isinstance(train_data, list) else train_data.x.shape[1]
-        num_features = int(train_x_shape)
+        num_features = int(train_data.x.shape[1])
         is_regression = task_type.endswith("regression")
         is_classification = not is_regression
         if is_regression:
@@ -110,7 +110,7 @@ def run_training_task(task_id: str) -> None:
         # Class weights for imbalanced labels (classification only)
         class_weights = None
         if is_classification:
-            labels = train_data[0].y.numpy() if isinstance(train_data, list) else train_data.y.numpy()
+            labels = train_data.y.numpy()
             unique_labels = np.unique(labels)
             if len(unique_labels) == 2:
                 n_total = len(labels)
@@ -156,14 +156,8 @@ def run_training_task(task_id: str) -> None:
 
         model = get_model(best_config["model_name"], **model_kwargs)
 
-        train_list = train_data if isinstance(train_data, list) else [train_data]
-        val_list = test_data if isinstance(test_data, list) else [test_data]
-
-        if sum(d.num_nodes for d in val_list) == 0:
-            val_list = train_list
-
-        train_loader = DataLoader(train_list, batch_size=len(train_list) or 32, shuffle=False)
-        val_loader = DataLoader(val_list, batch_size=len(val_list) or 32, shuffle=False)
+        train_loader = DataLoader([train_data], batch_size=1, shuffle=False)
+        val_loader = DataLoader([test_data], batch_size=1, shuffle=False)
 
         trainer = pl.Trainer(
             max_epochs=settings.MAX_EPOCHS,
@@ -178,8 +172,8 @@ def run_training_task(task_id: str) -> None:
         training_time = time.time() - t_start
 
         # --- EVALUATION ---
-        train_preds, train_y_true = _predict(model, train_loader, task_type)
-        test_preds, test_y_true = _predict(model, val_loader, task_type)
+        train_preds, train_y_true = _predict(model, train_data, task_type)
+        test_preds, test_y_true = _predict(model, test_data, task_type)
 
         if is_regression:
             train_metrics = _compute_regression_metrics(train_y_true, train_preds)
@@ -191,17 +185,15 @@ def run_training_task(task_id: str) -> None:
         # Val metrics = test metrics (test is used as validation during training)
         val_metrics = dict(test_metrics)
 
-        # Confusion matrix (classification only)
+        # Confusion matrix (classification only) — NxN multiclass format
         confusion_matrix = None
         if is_classification:
-            tp = int(((test_preds == 1) & (test_y_true == 1)).sum())
-            fp = int(((test_preds == 1) & (test_y_true == 0)).sum())
-            fn = int(((test_preds == 0) & (test_y_true == 1)).sum())
-            tn = int(((test_preds == 0) & (test_y_true == 0)).sum())
-            confusion_matrix = [
-                {"actual": "Positive", "predicted_negative": fn, "predicted_positive": tp},
-                {"actual": "Negative", "predicted_negative": tn, "predicted_positive": fp},
-            ]
+            unique_labels = sorted(set(test_y_true.tolist()) | set(test_preds.tolist()))
+            cm = sklearn_confusion_matrix(test_y_true, test_preds, labels=unique_labels)
+            confusion_matrix = {
+                "labels": [str(lbl) for lbl in unique_labels],
+                "matrix": cm.tolist(),
+            }
 
         # Residual data (regression only)
         residual_data = None
@@ -266,6 +258,8 @@ def run_training_task(task_id: str) -> None:
             store.update_project(project_id, current_step=4, status="completed")
 
     except Exception as e:
-        store.update_task(task_id, status="FAILED", progress=0, error=str(e))
+        import logging
+        logging.exception("Training task %s failed", task_id)
+        store.update_task(task_id, status="FAILED", progress=0, error="Training failed. Check server logs for details.")
         if task.get("project_id"):
             store.update_project(task["project_id"], status="failed")
