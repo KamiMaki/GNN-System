@@ -16,10 +16,11 @@ const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
 const STEPS = [
-    { label: 'Upload Data' },
-    { label: 'Data Analysis' },
+    { label: 'Upload' },
+    { label: 'Analysis' },
     { label: 'Training' },
     { label: 'Evaluation' },
+    { label: 'Models' },
 ];
 
 const STEP_PATHS = (projectId: string) => [
@@ -27,6 +28,7 @@ const STEP_PATHS = (projectId: string) => [
     `/projects/${projectId}/explore`,
     `/projects/${projectId}/train`,
     `/projects/${projectId}/evaluate`,
+    `/projects/${projectId}/models`,
 ];
 
 const STATUS_TAG_COLOR: Record<string, string> = {
@@ -56,8 +58,9 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
     const activeIndex = isProjectMode ? (projectStep ?? 1) - 1 : -1;
     // maxReachableIndex: steps that the user has reached (0-indexed).
     // projectStep is 1-indexed; step N means indices 0..N-1 are reachable.
-    // When training, step 3 (index 2) is the current one but step 4 is not yet reachable.
-    const maxReachableIndex = isProjectMode ? (projectStep ?? 1) - 1 : -1;
+    // When completed (step 4), also unlock step 5 (Models).
+    const baseMaxIndex = isProjectMode ? (projectStep ?? 1) - 1 : -1;
+    const maxReachableIndex = (projectStatus === 'completed' && baseMaxIndex >= 3) ? 4 : baseMaxIndex;
 
     const handleStepClick = (index: number) => {
         if (!projectId) return;

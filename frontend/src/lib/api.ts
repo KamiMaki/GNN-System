@@ -70,6 +70,31 @@ export interface ProjectDetail extends ProjectSummary {
   label_column?: string;
   dataset_summary?: DatasetSummary;
   task_status?: TaskStatus;
+  dataset_ids?: string[];
+  experiment_ids?: string[];
+}
+
+// ── Experiment Types ──
+
+export interface ExperimentSummary {
+  experiment_id: string;
+  project_id: string;
+  name: string;
+  dataset_id: string;
+  task_type?: string;
+  label_column?: string;
+  current_step: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  run_count: number;
+  best_metric?: number;
+  best_model?: string;
+}
+
+export interface ExperimentDetail extends ExperimentSummary {
+  dataset_summary?: DatasetSummary;
+  runs: TaskStatus[];
 }
 
 // ── Explore Types (generic) ──
@@ -166,6 +191,37 @@ export interface Report {
   residual_data?: Array<{ actual: number; predicted: number }>;
   best_config?: BestConfig;
   leaderboard?: LeaderboardEntry[];
+}
+
+// ── Model Registry ──
+
+export interface RegisteredModel {
+  model_id: string;
+  project_id: string;
+  task_id: string;
+  name: string;
+  model_name: string;
+  task_type: string;
+  label_column: string;
+  num_features: number;
+  num_classes: number;
+  best_config: BestConfig;
+  train_metrics: SplitMetrics;
+  test_metrics: SplitMetrics;
+  file_path: string;
+  registered_at: string;
+  description: string;
+}
+
+export interface EvaluationResult {
+  model_id: string;
+  model_name: string;
+  task_type: string;
+  metrics: SplitMetrics;
+  confusion_matrix: ConfusionMatrix | null;
+  residual_data?: Array<{ actual: number; predicted: number }>;
+  num_samples: number;
+  evaluated_at: string;
 }
 
 // ── Legacy Explore (for backward compat) ──
@@ -389,6 +445,47 @@ export const listExperiments = async (projectId: string): Promise<TaskStatus[]> 
   return res.json();
 };
 
+// ── Experiment Hierarchy API ──
+
+export const createExperiment = async (
+  projectId: string,
+  name: string,
+  datasetId: string,
+): Promise<ExperimentSummary> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, dataset_id: datasetId }),
+  });
+  if (!res.ok) throw new Error('Failed to create experiment');
+  return res.json();
+};
+
+export const listProjectExperiments = async (projectId: string): Promise<ExperimentSummary[]> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments/list`);
+  if (!res.ok) throw new Error('Failed to list experiments');
+  return res.json();
+};
+
+export const getExperimentDetail = async (
+  projectId: string,
+  experimentId: string,
+): Promise<ExperimentDetail> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments/${experimentId}`);
+  if (!res.ok) throw new Error('Failed to get experiment');
+  return res.json();
+};
+
+export const deleteExperiment = async (
+  projectId: string,
+  experimentId: string,
+): Promise<void> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments/${experimentId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete experiment');
+};
+
 export const getExperimentReport = async (projectId: string, taskId: string): Promise<Report> => {
   const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/report/${taskId}`);
   if (!res.ok) throw new Error('Failed to get experiment report');
@@ -476,5 +573,62 @@ export const listDatasets = async (): Promise<DatasetSummary[]> => {
 export const listTasks = async (): Promise<TaskStatus[]> => {
   const res = await fetch(`${API_BASE}/api/v1/tasks`);
   if (!res.ok) throw new Error(`List tasks failed`);
+  return res.json();
+};
+
+// ════════════════════════════════════════════
+// Model Registry API Functions
+// ════════════════════════════════════════════
+
+export const listProjectModels = async (projectId: string): Promise<RegisteredModel[]> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models`);
+  if (!res.ok) throw new Error('Failed to list models');
+  return res.json();
+};
+
+export const getModelDetail = async (projectId: string, modelId: string): Promise<RegisteredModel> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}`);
+  if (!res.ok) throw new Error('Failed to get model');
+  return res.json();
+};
+
+export const updateModelInfo = async (
+  projectId: string,
+  modelId: string,
+  data: { name?: string; description?: string },
+): Promise<RegisteredModel> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update model');
+  return res.json();
+};
+
+export const deleteModel = async (projectId: string, modelId: string): Promise<void> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete model');
+};
+
+export const evaluateModelWithData = async (
+  projectId: string,
+  modelId: string,
+  nodesFile: File,
+  edgesFile: File,
+): Promise<EvaluationResult> => {
+  const formData = new FormData();
+  formData.append('nodes_file', nodesFile);
+  formData.append('edges_file', edgesFile);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}/evaluate`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || 'Evaluation failed');
+  }
   return res.json();
 };

@@ -10,6 +10,8 @@ from sklearn.metrics import (
     confusion_matrix as sklearn_confusion_matrix,
 )
 
+from pathlib import Path
+
 from app.core import store
 from app.core.config import settings
 from app.models.factory import get_model
@@ -245,6 +247,49 @@ def run_training_task(task_id: str) -> None:
             report=report,
             completed_at=datetime.now(timezone.utc).isoformat(),
         )
+
+        # Save model to disk for model registry
+        models_dir = Path(settings.MODELS_DIR)
+        models_dir.mkdir(parents=True, exist_ok=True)
+        model_file = models_dir / f"{task_id}.pt"
+        torch.save({
+            "state_dict": model.state_dict(),
+            "model_name": best_config["model_name"],
+            "num_features": num_features,
+            "num_classes": num_classes,
+            "task_type": task_type,
+            "label_column": label_column,
+            "hidden_dim": best_config["hidden_dim"],
+            "num_layers": best_config["num_layers"],
+            "dropout": best_config["dropout"],
+            "lr": best_config["lr"],
+        }, str(model_file))
+
+        # Auto-register model
+        model_id = task_id  # use task_id as model_id for simplicity
+        store.put_model_record(model_id, {
+            "model_id": model_id,
+            "project_id": project_id or "",
+            "task_id": task_id,
+            "name": f"{best_config['model_name'].upper()} - {task_type}",
+            "model_name": best_config["model_name"],
+            "task_type": task_type,
+            "label_column": label_column,
+            "num_features": num_features,
+            "num_classes": num_classes,
+            "best_config": {
+                "model_name": best_config["model_name"],
+                "hidden_dim": best_config["hidden_dim"],
+                "num_layers": best_config["num_layers"],
+                "dropout": round(best_config["dropout"], 3),
+                "lr": round(best_config["lr"], 6),
+            },
+            "train_metrics": train_metrics,
+            "test_metrics": test_metrics,
+            "file_path": str(model_file),
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+            "description": "",
+        })
 
         # Record training history for time estimation
         store.add_training_record({

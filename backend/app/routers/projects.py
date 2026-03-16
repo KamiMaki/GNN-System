@@ -5,9 +5,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import torch
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from sklearn.metrics import (
+    accuracy_score, f1_score, precision_score, recall_score,
+    mean_squared_error, mean_absolute_error, r2_score,
+    confusion_matrix as sklearn_confusion_matrix,
+)
 
 from app.core import store
 from app.core.config import settings
@@ -22,12 +28,18 @@ from app.data.feature_engineering import (
 )
 from app.data.ingestion import parse_csv_pair_generic
 from app.data.pyg_converter import dataframes_to_pyg_dynamic
+from app.models.factory import get_model
 from app.schemas.api_models import (
     ConfirmDataRequest,
     CorrelationRequest,
+    CreateExperimentRequest,
     CreateProjectRequest,
     UpdateProjectRequest,
     DatasetSummary,
+    EvaluateModelRequest,
+    EvaluationResult,
+    ExperimentDetail,
+    ExperimentSummary,
     GenericExploreData,
     ImputationRequest,
     ImputationResult,
@@ -35,6 +47,8 @@ from app.schemas.api_models import (
     LabelValidationResult,
     ProjectDetail,
     ProjectSummary,
+    RegisteredModel,
+    RegisterModelRequest,
     StartTrainingRequest,
     TaskStatus,
     TrainingEstimate,
@@ -239,6 +253,8 @@ async def get_project(project_id: str):
         task_id=p.get("task_id"),
         task_type=p.get("task_type"),
         label_column=p.get("label_column"),
+        dataset_ids=p.get("dataset_ids", [p["dataset_id"]] if p.get("dataset_id") else []),
+        experiment_ids=p.get("experiment_ids", []),
     )
 
     # Attach dataset summary if available
@@ -282,6 +298,121 @@ async def update_project(project_id: str, body: UpdateProjectRequest):
         updates["tags"] = body.tags
     store.update_project(project_id, **updates)
     return _to_summary(store.get_project(project_id))
+
+
+# ── Experiment Hierarchy ──
+
+
+def _to_experiment_summary(e: dict) -> ExperimentSummary:
+    return ExperimentSummary(
+        experiment_id=e["experiment_id"],
+        project_id=e["project_id"],
+        name=e["name"],
+        dataset_id=e["dataset_id"],
+        task_type=e.get("task_type"),
+        label_column=e.get("label_column"),
+        current_step=e.get("current_step", 1),
+        status=e.get("status", "created"),
+        created_at=e["created_at"],
+        updated_at=e.get("updated_at", e["created_at"]),
+        run_count=len(e.get("task_ids", [])),
+        best_metric=e.get("best_metric"),
+        best_model=e.get("best_model"),
+    )
+
+
+@router.post("/{project_id}/experiments", response_model=ExperimentSummary)
+async def create_experiment(project_id: str, body: CreateExperimentRequest):
+    _project_or_404(project_id)
+    # Validate dataset exists
+    ds = store.get_dataset(body.dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    experiment_id = str(uuid.uuid4())
+    now = _now_iso()
+    record = {
+        "experiment_id": experiment_id,
+        "project_id": project_id,
+        "name": body.name,
+        "dataset_id": body.dataset_id,
+        "task_type": None,
+        "label_column": None,
+        "current_step": 1,
+        "status": "created",
+        "created_at": now,
+        "updated_at": now,
+        "task_ids": [],
+        "best_metric": None,
+        "best_model": None,
+    }
+    store.put_experiment(experiment_id, record)
+
+    # Add to project's experiment list
+    project = store.get_project(project_id)
+    exp_ids = project.get("experiment_ids", [])
+    exp_ids.append(experiment_id)
+    store.update_project(project_id, experiment_ids=exp_ids, updated_at=now)
+
+    return _to_experiment_summary(record)
+
+
+@router.get("/{project_id}/experiments/list", response_model=list[ExperimentSummary])
+async def list_project_experiments(project_id: str):
+    _project_or_404(project_id)
+    exps = store.list_experiments(project_id)
+    return [_to_experiment_summary(e) for e in exps]
+
+
+@router.get("/{project_id}/experiments/{experiment_id}", response_model=ExperimentDetail)
+async def get_experiment(project_id: str, experiment_id: str):
+    _project_or_404(project_id)
+    exp = store.get_experiment(experiment_id)
+    if not exp or exp["project_id"] != project_id:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    summary = _to_experiment_summary(exp)
+    detail = ExperimentDetail(**summary.model_dump())
+
+    # Attach dataset summary
+    ds = store.get_dataset(exp["dataset_id"])
+    if ds:
+        detail.dataset_summary = DatasetSummary(
+            dataset_id=ds["dataset_id"],
+            name=ds["name"],
+            num_nodes=ds["num_nodes"],
+            num_edges=ds["num_edges"],
+            num_features=ds.get("num_features", 0),
+            num_classes=ds.get("num_classes", 0),
+            is_directed=ds.get("is_directed", True),
+            task_type=ds.get("task_type", "pending"),
+        )
+
+    # Attach training runs
+    runs = []
+    for tid in exp.get("task_ids", []):
+        task = store.get_task(tid)
+        if task:
+            runs.append(_task_to_status(task, project_id))
+    detail.runs = runs
+
+    return detail
+
+
+@router.delete("/{project_id}/experiments/{experiment_id}")
+async def delete_experiment(project_id: str, experiment_id: str):
+    _project_or_404(project_id)
+    exp = store.get_experiment(experiment_id)
+    if not exp or exp["project_id"] != project_id:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    store.delete_experiment(experiment_id)
+    # Remove from project's experiment list
+    project = store.get_project(project_id)
+    exp_ids = project.get("experiment_ids", [])
+    if experiment_id in exp_ids:
+        exp_ids.remove(experiment_id)
+        store.update_project(project_id, experiment_ids=exp_ids, updated_at=_now_iso())
+    return {"detail": "Experiment deleted"}
 
 
 # ── Step 1: Upload Data ──
@@ -456,11 +587,17 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
 
             store.put_dataset(dataset_id, ds_record)
 
+        project = store.get_project(project_id)
+        ds_ids = project.get("dataset_ids", [])
+        if dataset_id not in ds_ids:
+            ds_ids.append(dataset_id)
         store.update_project(
             project_id,
             dataset_id=dataset_id,
+            dataset_ids=ds_ids,
             current_step=2,
             status="data_uploaded",
+            updated_at=_now_iso(),
         )
 
         # Check for edge attrs
@@ -519,11 +656,17 @@ async def upload_project_data(
         record["dataset_id"] = dataset_id
         store.put_dataset(dataset_id, record)
 
+        project = store.get_project(project_id)
+        ds_ids = project.get("dataset_ids", [])
+        if dataset_id not in ds_ids:
+            ds_ids.append(dataset_id)
         store.update_project(
             project_id,
             dataset_id=dataset_id,
+            dataset_ids=ds_ids,
             current_step=2,
             status="data_uploaded",
+            updated_at=_now_iso(),
         )
 
         return DatasetSummary(
@@ -673,11 +816,17 @@ async def upload_project_folder(
         }
         store.put_dataset(dataset_id, record)
 
+        project = store.get_project(project_id)
+        ds_ids = project.get("dataset_ids", [])
+        if dataset_id not in ds_ids:
+            ds_ids.append(dataset_id)
         store.update_project(
             project_id,
             dataset_id=dataset_id,
+            dataset_ids=ds_ids,
             current_step=2,
             status="data_uploaded",
+            updated_at=_now_iso(),
         )
 
         return DatasetSummary(
@@ -986,3 +1135,180 @@ async def get_experiment_report(project_id: str, task_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="Report not available")
     return report
+
+
+# ══════════════════════════════════════════════
+# Model Registry
+# ══════════════════════════════════════════════
+
+
+@router.get("/{project_id}/models", response_model=list[RegisteredModel])
+async def list_project_models(project_id: str):
+    """List all registered models for a project."""
+    _project_or_404(project_id)
+    records = store.list_model_records(project_id)
+    return [RegisteredModel(**r) for r in records]
+
+
+@router.get("/{project_id}/models/{model_id}", response_model=RegisteredModel)
+async def get_model_detail(project_id: str, model_id: str):
+    """Get a specific registered model."""
+    _project_or_404(project_id)
+    record = store.get_model_record(model_id)
+    if not record or record.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return RegisteredModel(**record)
+
+
+@router.patch("/{project_id}/models/{model_id}", response_model=RegisteredModel)
+async def update_model_info(project_id: str, model_id: str, body: RegisterModelRequest):
+    """Update model name/description."""
+    _project_or_404(project_id)
+    record = store.get_model_record(model_id)
+    if not record or record.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail="Model not found")
+    if body.name:
+        record["name"] = body.name
+    if body.description is not None:
+        record["description"] = body.description
+    store.put_model_record(model_id, record)
+    return RegisteredModel(**record)
+
+
+@router.delete("/{project_id}/models/{model_id}")
+async def delete_model(project_id: str, model_id: str):
+    """Delete a registered model and its file."""
+    _project_or_404(project_id)
+    record = store.get_model_record(model_id)
+    if not record or record.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail="Model not found")
+    # Remove model file
+    model_path = Path(record.get("file_path", ""))
+    if model_path.exists():
+        model_path.unlink()
+    store.delete_model_record(model_id)
+    return {"detail": "Model deleted"}
+
+
+# ══════════════════════════════════════════════
+# Model Evaluation with New Data
+# ══════════════════════════════════════════════
+
+
+@router.post("/{project_id}/models/{model_id}/evaluate", response_model=EvaluationResult)
+async def evaluate_model_with_data(
+    project_id: str,
+    model_id: str,
+    nodes_file: UploadFile = File(...),
+    edges_file: UploadFile = File(...),
+):
+    """Upload new data and evaluate a registered model against it."""
+    _project_or_404(project_id)
+    record = store.get_model_record(model_id)
+    if not record or record.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    model_path = Path(record.get("file_path", ""))
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Model file not found on disk")
+
+    try:
+        # Load model checkpoint
+        checkpoint = torch.load(str(model_path), map_location="cpu", weights_only=False)
+
+        model_name = checkpoint["model_name"]
+        num_features = checkpoint["num_features"]
+        num_classes = checkpoint["num_classes"]
+        task_type = checkpoint["task_type"]
+        label_column = checkpoint["label_column"]
+
+        # Reconstruct model
+        model = get_model(
+            model_name,
+            num_features=num_features,
+            num_classes=num_classes,
+            hidden_dim=checkpoint["hidden_dim"],
+            num_layers=checkpoint["num_layers"],
+            dropout=checkpoint["dropout"],
+            lr=checkpoint["lr"],
+            task_type=task_type,
+        )
+        model.load_state_dict(checkpoint["state_dict"])
+        model.eval()
+
+        # Parse uploaded data
+        nodes_bytes = await nodes_file.read()
+        edges_bytes = await edges_file.read()
+        parsed = parse_csv_pair_generic(nodes_bytes, edges_bytes, "eval_data")
+
+        nodes_df = parsed["nodes_df"]
+        edges_df = parsed["edges_df"]
+
+        # Convert to PyG
+        eval_data, _, _ = dataframes_to_pyg_dynamic(
+            nodes_df, edges_df,
+            label_column=label_column,
+            task_type=task_type,
+            fit_scaler=True,
+        )
+
+        # Run inference
+        is_graph = task_type.startswith("graph")
+        is_regression = task_type.endswith("regression")
+
+        with torch.no_grad():
+            if is_graph:
+                batch_tensor = torch.zeros(eval_data.x.size(0), dtype=torch.long)
+                out = model(eval_data.x, eval_data.edge_index, eval_data.edge_attr, batch=batch_tensor)
+            else:
+                out = model(eval_data.x, eval_data.edge_index, eval_data.edge_attr)
+
+        y_true = eval_data.y.numpy()
+        if is_regression:
+            y_pred = out.numpy()
+        else:
+            y_pred = out.argmax(dim=-1).numpy()
+
+        # Compute metrics
+        if is_regression:
+            metrics = {
+                "mse": round(float(mean_squared_error(y_true, y_pred)), 4),
+                "mae": round(float(mean_absolute_error(y_true, y_pred)), 4),
+                "r2_score": round(float(r2_score(y_true, y_pred)), 4),
+            }
+            # Residual data
+            indices = np.random.choice(len(y_true), min(500, len(y_true)), replace=False)
+            residual_data = [
+                {"actual": round(float(y_true[i]), 4), "predicted": round(float(y_pred[i]), 4)}
+                for i in indices
+            ]
+            confusion_matrix_result = None
+        else:
+            avg = "binary" if len(set(y_true)) <= 2 else "macro"
+            metrics = {
+                "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
+                "f1_score": round(float(f1_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+                "precision": round(float(precision_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+                "recall": round(float(recall_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+            }
+            residual_data = None
+            unique_labels = sorted(set(y_true.tolist()) | set(y_pred.tolist()))
+            cm = sklearn_confusion_matrix(y_true, y_pred, labels=unique_labels)
+            confusion_matrix_result = {
+                "labels": [str(lbl) for lbl in unique_labels],
+                "matrix": cm.tolist(),
+            }
+
+        return EvaluationResult(
+            model_id=model_id,
+            model_name=model_name,
+            task_type=task_type,
+            metrics=metrics,
+            confusion_matrix=confusion_matrix_result,
+            residual_data=residual_data,
+            num_samples=len(y_true),
+            evaluated_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Evaluation failed: {str(e)}")

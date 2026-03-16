@@ -128,6 +128,8 @@ class ProjectDetail(ProjectSummary):
     label_column: Optional[str] = None
     dataset_summary: Optional[DatasetSummary] = None
     task_status: Optional["TaskStatus"] = None
+    dataset_ids: list[str] = []
+    experiment_ids: list[str] = []
 
 
 # ── Legacy Explore (kept for backward compat) ──
@@ -227,6 +229,74 @@ class TrainingEstimate(BaseModel):
     device: str
 
 
+# ── Experiment Hierarchy ──
+
+class CreateExperimentRequest(BaseModel):
+    name: str
+    dataset_id: str
+
+
+class ExperimentSummary(BaseModel):
+    experiment_id: str
+    project_id: str
+    name: str
+    dataset_id: str
+    task_type: Optional[str] = None
+    label_column: Optional[str] = None
+    current_step: int = 1  # 1=created, 2=data_analyzed, 3=training, 4=completed
+    status: str = "created"
+    created_at: str
+    updated_at: str
+    run_count: int = 0
+    best_metric: Optional[float] = None
+    best_model: Optional[str] = None
+
+
+class ExperimentDetail(ExperimentSummary):
+    dataset_summary: Optional[DatasetSummary] = None
+    runs: list[TaskStatus] = []
+
+
+# ── Model Registry ──
+
+class RegisteredModel(BaseModel):
+    model_id: str
+    project_id: str
+    task_id: str
+    name: str
+    model_name: str  # gcn, gat, sage, gin, mlp
+    task_type: str
+    label_column: str
+    num_features: int
+    num_classes: int
+    best_config: BestConfig
+    train_metrics: SplitMetrics
+    test_metrics: SplitMetrics
+    file_path: str
+    registered_at: str
+    description: str = ""
+
+
+class RegisterModelRequest(BaseModel):
+    name: str = ""
+    description: str = ""
+
+
+class EvaluateModelRequest(BaseModel):
+    model_id: str
+
+
+class EvaluationResult(BaseModel):
+    model_id: str
+    model_name: str
+    task_type: str
+    metrics: SplitMetrics
+    confusion_matrix: Optional[ConfusionMatrix] = None
+    residual_data: Optional[list[dict]] = None
+    num_samples: int
+    evaluated_at: str
+
+
 # ── Legacy Task Creation (kept for backward compat) ──
 
 class CreateTaskRequest(BaseModel):
@@ -236,3 +306,4 @@ class CreateTaskRequest(BaseModel):
 
 # Rebuild model to resolve forward reference
 ProjectDetail.model_rebuild()
+ExperimentDetail.model_rebuild()
