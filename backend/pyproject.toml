@@ -1,20 +1,12 @@
 [project]
 name = "layoutxpert-backend"
-version = "0.1.0"
-description = "GNN backend for circuit layout criticality prediction"
+version = "0.3.0-mock"
+description = "GNN backend for circuit layout criticality prediction (mock mode for frontend demo)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "python-multipart>=0.0.9",
-    "pandas>=2.2.0",
-    "numpy>=1.26.0",
-    "scikit-learn>=1.5.0",
-    "networkx>=3.3",
-    "torch>=2.3.0",
-    "torch-geometric>=2.5.0",
-    "pytorch-lightning>=2.3.0",
-    "optuna>=3.6.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.3.0",
 ]
