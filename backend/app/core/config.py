@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     MOCK_DATA_DIR: Path = Path(__file__).resolve().parent.parent.parent / "mock_data"
     STORAGE_DIR: Path = Path(__file__).resolve().parent.parent.parent / "storage"
+    MODELS_DIR: Path = Path(__file__).resolve().parent.parent.parent / "storage" / "models"
     DEFAULT_TASK_TYPE: str = "node_classification"
     MAX_EPOCHS: int = 50
     PATIENCE: int = 10

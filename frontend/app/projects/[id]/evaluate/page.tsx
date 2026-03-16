@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
-import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme } from 'antd';
-import { TrophyOutlined } from '@ant-design/icons';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme, Button, Divider } from 'antd';
+import { TrophyOutlined, RocketOutlined, ArrowRightOutlined } from '@ant-design/icons';
 
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -58,6 +58,7 @@ function MetricsRow({ label, metrics }: { label: string; metrics: SplitMetrics }
 export default function EvaluatePage() {
     const params = useParams();
     const searchParams = useSearchParams();
+    const router = useRouter();
     const projectId = params.id as string;
     const taskIdParam = searchParams.get('task_id');
     const { token } = theme.useToken();
@@ -154,11 +155,20 @@ export default function EvaluatePage() {
                         Task: {report.task_type.replace('_', ' ').toUpperCase()}
                     </Text>
                 </div>
-                {report.best_config && (
-                    <Tag icon={<TrophyOutlined />} color="gold" style={{ fontSize: 13, padding: '4px 12px' }}>
-                        Best: {report.best_config.model_name.toUpperCase()}
-                    </Tag>
-                )}
+                <Space>
+                    {report.best_config && (
+                        <Tag icon={<TrophyOutlined />} color="gold" style={{ fontSize: 13, padding: '4px 12px' }}>
+                            Best: {report.best_config.model_name.toUpperCase()}
+                        </Tag>
+                    )}
+                    <Button
+                        type="primary"
+                        icon={<RocketOutlined />}
+                        onClick={() => router.push(`/projects/${projectId}/models`)}
+                    >
+                        Model Registry <ArrowRightOutlined />
+                    </Button>
+                </Space>
             </div>
 
             <Space direction="vertical" size="large" style={{ width: '100%' }}>

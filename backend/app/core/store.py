@@ -13,6 +13,12 @@ tasks: dict[str, Any] = {}
 # Key: project_id (str), Value: dict with name, tags, current_step, status, etc.
 projects: dict[str, Any] = {}
 
+# Key: experiment_id (str), Value: dict with experiment data
+experiments: dict[str, Any] = {}
+
+# Key: model_id (str), Value: dict with model metadata, file path, etc.
+models: dict[str, Any] = {}
+
 # Training history for time estimation: list of {num_nodes, n_trials, duration_seconds}
 training_history: list[dict] = []
 
@@ -84,6 +90,37 @@ def delete_project(project_id: str) -> bool:
         return False
 
 
+# ── Experiment CRUD ──
+
+def get_experiment(experiment_id: str) -> dict | None:
+    with _lock:
+        return experiments.get(experiment_id)
+
+
+def put_experiment(experiment_id: str, record: dict) -> None:
+    with _lock:
+        experiments[experiment_id] = record
+
+
+def update_experiment(experiment_id: str, **kwargs: Any) -> None:
+    with _lock:
+        if experiment_id in experiments:
+            experiments[experiment_id].update(kwargs)
+
+
+def list_experiments(project_id: str) -> list[dict]:
+    with _lock:
+        return [e for e in experiments.values() if e.get("project_id") == project_id]
+
+
+def delete_experiment(experiment_id: str) -> bool:
+    with _lock:
+        if experiment_id in experiments:
+            del experiments[experiment_id]
+            return True
+        return False
+
+
 # ── Training history for estimation ──
 
 def add_training_record(record: dict) -> None:
@@ -94,3 +131,30 @@ def add_training_record(record: dict) -> None:
 def get_training_history() -> list[dict]:
     with _lock:
         return list(training_history)
+
+
+# ── Model Registry CRUD ──
+
+def get_model_record(model_id: str) -> dict | None:
+    with _lock:
+        return models.get(model_id)
+
+
+def put_model_record(model_id: str, record: dict) -> None:
+    with _lock:
+        models[model_id] = record
+
+
+def list_model_records(project_id: str | None = None) -> list[dict]:
+    with _lock:
+        if project_id:
+            return [m for m in models.values() if m.get("project_id") == project_id]
+        return list(models.values())
+
+
+def delete_model_record(model_id: str) -> bool:
+    with _lock:
+        if model_id in models:
+            del models[model_id]
+            return True
+        return False

@@ -7,7 +7,7 @@ import {
 } from 'antd';
 import {
     PlayCircleOutlined, AppstoreOutlined, ClockCircleOutlined,
-    CheckCircleOutlined, HistoryOutlined, WarningOutlined,
+    CheckCircleOutlined, HistoryOutlined, WarningOutlined, RocketOutlined,
 } from '@ant-design/icons';
 
 import {
@@ -297,16 +297,26 @@ export default function TrainPage() {
                         )}
 
                         {isCompleted && (
-                            <Button
-                                type="primary"
-                                size="large"
-                                block
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => router.push(`/projects/${projectId}/evaluate`)}
-                                style={{ background: token.colorSuccess, borderColor: token.colorSuccess }}
-                            >
-                                View Latest Results
-                            </Button>
+                            <>
+                                <Button
+                                    type="primary"
+                                    size="large"
+                                    block
+                                    icon={<CheckCircleOutlined />}
+                                    onClick={() => router.push(`/projects/${projectId}/evaluate`)}
+                                    style={{ background: token.colorSuccess, borderColor: token.colorSuccess }}
+                                >
+                                    View Latest Results
+                                </Button>
+                                <Button
+                                    size="large"
+                                    block
+                                    icon={<RocketOutlined />}
+                                    onClick={() => router.push(`/projects/${projectId}/models`)}
+                                >
+                                    Model Registry
+                                </Button>
+                            </>
                         )}
 
                         {error && <Alert type="error" showIcon message={error} />}
