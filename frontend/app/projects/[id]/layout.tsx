@@ -5,11 +5,12 @@ import { useParams, usePathname } from 'next/navigation';
 import { Skeleton } from 'antd';
 import PipelineStepper from '@/components/PipelineStepper';
 import { getProject, ProjectDetail } from '@/lib/api';
+import { sanitizeRouteParam } from '@/lib/sanitize';
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
     const params = useParams();
     const pathname = usePathname();
-    const projectId = params.id as string;
+    const projectId = sanitizeRouteParam(params.id);
     const [project, setProject] = useState<ProjectDetail | null>(null);
     const [loading, setLoading] = useState(true);
 

@@ -22,6 +22,7 @@ import {
     listProjectModels, deleteModel, evaluateModelWithData, updateModelInfo,
     RegisteredModel, EvaluationResult, SplitMetrics,
 } from '@/lib/api';
+import { sanitizeRouteParam } from '@/lib/sanitize';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -62,7 +63,7 @@ function MetricsDisplay({ metrics, taskType }: { metrics: SplitMetrics; taskType
 export default function ModelsPage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeRouteParam(params.id);
     const { token } = theme.useToken();
 
     const [models, setModels] = useState<RegisteredModel[]>([]);

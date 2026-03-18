@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 
 import { getProjectReport, getExperimentReport, Report, SplitMetrics } from '@/lib/api';
+import { sanitizeRouteParam } from '@/lib/sanitize';
 
 const { Title, Text } = Typography;
 
@@ -59,8 +60,9 @@ export default function EvaluatePage() {
     const params = useParams();
     const searchParams = useSearchParams();
     const router = useRouter();
-    const projectId = params.id as string;
-    const taskIdParam = searchParams.get('task_id');
+    const projectId = sanitizeRouteParam(params.id);
+    const rawTaskId = searchParams.get('task_id');
+    const taskIdParam = rawTaskId ? sanitizeRouteParam(rawTaskId) : null;
     const { token } = theme.useToken();
 
     const [report, setReport] = useState<Report | null>(null);

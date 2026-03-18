@@ -15,6 +15,7 @@ import {
     listExperiments,
     TaskStatus, TrainingEstimate, ProjectDetail,
 } from '@/lib/api';
+import { sanitizeRouteParam } from '@/lib/sanitize';
 
 const { Title, Text } = Typography;
 
@@ -30,7 +31,7 @@ function formatTime(seconds: number): string {
 export default function TrainPage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeRouteParam(params.id);
     const { token } = theme.useToken();
 
     const [project, setProject] = useState<ProjectDetail | null>(null);

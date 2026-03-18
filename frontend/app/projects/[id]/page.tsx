@@ -16,6 +16,7 @@ import {
     getProject, listExperiments, ProjectDetail, TaskStatus, DatasetSummary,
 } from '@/lib/api';
 import PageTransition from '@/components/PageTransition';
+import { sanitizeRouteParam } from '@/lib/sanitize';
 
 const { Title, Text } = Typography;
 
@@ -61,7 +62,7 @@ const STATUS_COLOR: Record<string, string> = {
 export default function ProjectOverviewPage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeRouteParam(params.id);
     const { token } = theme.useToken();
 
     const [project, setProject] = useState<ProjectDetail | null>(null);

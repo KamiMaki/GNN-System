@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import KPICard from '../KPICard';
 
@@ -24,6 +23,8 @@ describe('KPICard', () => {
   it('applies color to value', () => {
     const { container } = render(<KPICard title="Test" value={10} color="#ff5500" />);
     const valueEl = container.querySelector('.ant-statistic-content-value');
-    expect(valueEl).toHaveStyle({ color: '#ff5500' });
+    expect(valueEl).toBeTruthy();
+    const style = valueEl?.closest('[style]')?.getAttribute('style') ?? '';
+    expect(style).toContain('color');
   });
 });

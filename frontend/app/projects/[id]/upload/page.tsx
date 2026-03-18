@@ -12,6 +12,7 @@ import {
     uploadProjectFolder, loadDemoData, downloadSampleData,
     listDemoDatasets, DemoDatasetInfo,
 } from '@/lib/api';
+import { sanitizeRouteParam } from '@/lib/sanitize';
 
 const { Title, Text } = Typography;
 
@@ -69,7 +70,7 @@ function analyzeFiles(files: File[]): { graphs: GraphInfo[]; isFlat: boolean } {
 export default function UploadPage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeRouteParam(params.id);
     const { token } = theme.useToken();
     const folderInputRef = useRef<HTMLInputElement>(null);
 

@@ -18,6 +18,7 @@ import {
     GenericExploreData, ColumnInfo, ColumnStats, NumericColumnStats, CategoricalColumnStats,
     LabelValidationResult,
 } from '@/lib/api';
+import { sanitizeRouteParam } from '@/lib/sanitize';
 
 const { Title, Text } = Typography;
 
@@ -31,7 +32,7 @@ const TASK_TYPES = [
 export default function ExplorePage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeRouteParam(params.id);
     const { token } = theme.useToken();
 
     const [exploreData, setExploreData] = useState<GenericExploreData | null>(null);

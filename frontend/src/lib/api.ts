@@ -259,18 +259,18 @@ export const listProjects = async (): Promise<ProjectSummary[]> => {
 };
 
 export const getProject = async (projectId: string): Promise<ProjectDetail> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}`);
   if (!res.ok) throw new Error(`Get project failed`);
   return res.json();
 };
 
 export const deleteProject = async (projectId: string): Promise<void> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Delete project failed`);
 };
 
 export const updateProject = async (projectId: string, data: { name?: string; tags?: string[] }): Promise<ProjectSummary> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -294,7 +294,7 @@ export const uploadProjectData = async (
   if (nodesTestFile) formData.append('nodes_test_file', nodesTestFile);
   if (edgesTestFile) formData.append('edges_test_file', edgesTestFile);
 
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/upload`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/upload`, {
     method: 'POST',
     body: formData,
   });
@@ -306,7 +306,7 @@ export const uploadProjectData = async (
 };
 
 export const getProjectExplore = async (projectId: string): Promise<GenericExploreData> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/explore`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/explore`);
   if (!res.ok) throw new Error(`Explore failed`);
   return res.json();
 };
@@ -328,7 +328,7 @@ export const getCorrelation = async (
   projectId: string,
   columns: string[],
 ): Promise<Array<{ x: string; y: string; value: number }>> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/correlation`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/correlation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ columns }),
@@ -342,7 +342,7 @@ export const validateLabel = async (
   taskType: string,
   labelColumn: string,
 ): Promise<LabelValidationResult> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/validate-label`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/validate-label`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ task_type: taskType, label_column: labelColumn }),
@@ -356,7 +356,7 @@ export const imputeMissing = async (
   column: string,
   method: string,
 ): Promise<{ column: string; filled_count: number; method: string }> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/impute`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/impute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ column, method }),
@@ -370,7 +370,7 @@ export const confirmData = async (
   taskType: string,
   labelColumn: string,
 ): Promise<ProjectSummary> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/confirm`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ task_type: taskType, label_column: labelColumn }),
@@ -386,7 +386,7 @@ export const estimateTraining = async (
   projectId: string,
   nTrials: number,
 ): Promise<TrainingEstimate> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/estimate?n_trials=${nTrials}`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/estimate?n_trials=${encodeURIComponent(nTrials)}`);
   if (!res.ok) throw new Error(`Estimate failed`);
   return res.json();
 };
@@ -396,7 +396,7 @@ export const startProjectTraining = async (
   models: string[],
   nTrials: number,
 ): Promise<TaskStatus> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/train`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/train`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ models, n_trials: nTrials }),
@@ -406,13 +406,13 @@ export const startProjectTraining = async (
 };
 
 export const getProjectStatus = async (projectId: string): Promise<TaskStatus> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/status`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/status`);
   if (!res.ok) throw new Error(`Status failed`);
   return res.json();
 };
 
 export const getProjectReport = async (projectId: string): Promise<Report> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/report`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/report`);
   if (!res.ok) throw new Error(`Report failed`);
   return res.json();
 };
@@ -423,7 +423,7 @@ export const downloadSampleData = (): string => {
 
 export const loadDemoData = async (projectId: string, demoId?: string): Promise<DatasetSummary> => {
   const params = demoId ? `?demo_id=${encodeURIComponent(demoId)}` : '';
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/load-demo${params}`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/load-demo${params}`, {
     method: 'POST',
   });
   if (!res.ok) {
@@ -440,7 +440,7 @@ export const listDemoDatasets = async (): Promise<DemoDatasetInfo[]> => {
 };
 
 export const listExperiments = async (projectId: string): Promise<TaskStatus[]> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/experiments`);
   if (!res.ok) throw new Error('Failed to list experiments');
   return res.json();
 };
@@ -452,7 +452,7 @@ export const createExperiment = async (
   name: string,
   datasetId: string,
 ): Promise<ExperimentSummary> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/experiments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, dataset_id: datasetId }),
@@ -462,7 +462,7 @@ export const createExperiment = async (
 };
 
 export const listProjectExperiments = async (projectId: string): Promise<ExperimentSummary[]> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments/list`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/experiments/list`);
   if (!res.ok) throw new Error('Failed to list experiments');
   return res.json();
 };
@@ -471,7 +471,7 @@ export const getExperimentDetail = async (
   projectId: string,
   experimentId: string,
 ): Promise<ExperimentDetail> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments/${experimentId}`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}`);
   if (!res.ok) throw new Error('Failed to get experiment');
   return res.json();
 };
@@ -480,14 +480,14 @@ export const deleteExperiment = async (
   projectId: string,
   experimentId: string,
 ): Promise<void> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiments/${experimentId}`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete experiment');
 };
 
 export const getExperimentReport = async (projectId: string, taskId: string): Promise<Report> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/report/${taskId}`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/report/${encodeURIComponent(taskId)}`);
   if (!res.ok) throw new Error('Failed to get experiment report');
   return res.json();
 };
@@ -503,7 +503,7 @@ export const uploadProjectFolder = async (
   }
   formData.append('dataset_name', datasetName);
 
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/upload-folder`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/upload-folder`, {
     method: 'POST',
     body: formData,
   });
@@ -547,19 +547,19 @@ export const startTraining = async (
 };
 
 export const getTaskStatus = async (taskId: string): Promise<TaskStatus> => {
-  const res = await fetch(`${API_BASE}/api/v1/tasks/${taskId}`);
+  const res = await fetch(`${API_BASE}/api/v1/tasks/${encodeURIComponent(taskId)}`);
   if (!res.ok) throw new Error(`Task not found: ${taskId}`);
   return res.json();
 };
 
 export const getDatasetExplore = async (datasetId: string): Promise<ExploreData> => {
-  const res = await fetch(`${API_BASE}/api/v1/datasets/${datasetId}/explore`);
+  const res = await fetch(`${API_BASE}/api/v1/datasets/${encodeURIComponent(datasetId)}/explore`);
   if (!res.ok) throw new Error(`Explore failed: ${res.statusText}`);
   return res.json();
 };
 
 export const getTaskReport = async (taskId: string): Promise<Report> => {
-  const res = await fetch(`${API_BASE}/api/v1/tasks/${taskId}/report`);
+  const res = await fetch(`${API_BASE}/api/v1/tasks/${encodeURIComponent(taskId)}/report`);
   if (!res.ok) throw new Error(`Report failed: ${res.statusText}`);
   return res.json();
 };
@@ -581,13 +581,13 @@ export const listTasks = async (): Promise<TaskStatus[]> => {
 // ════════════════════════════════════════════
 
 export const listProjectModels = async (projectId: string): Promise<RegisteredModel[]> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/models`);
   if (!res.ok) throw new Error('Failed to list models');
   return res.json();
 };
 
 export const getModelDetail = async (projectId: string, modelId: string): Promise<RegisteredModel> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}`);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(modelId)}`);
   if (!res.ok) throw new Error('Failed to get model');
   return res.json();
 };
@@ -597,7 +597,7 @@ export const updateModelInfo = async (
   modelId: string,
   data: { name?: string; description?: string },
 ): Promise<RegisteredModel> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(modelId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -607,7 +607,7 @@ export const updateModelInfo = async (
 };
 
 export const deleteModel = async (projectId: string, modelId: string): Promise<void> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(modelId)}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete model');
@@ -622,7 +622,7 @@ export const evaluateModelWithData = async (
   const formData = new FormData();
   formData.append('nodes_file', nodesFile);
   formData.append('edges_file', edgesFile);
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}/evaluate`, {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(modelId)}/evaluate`, {
     method: 'POST',
     body: formData,
   });
