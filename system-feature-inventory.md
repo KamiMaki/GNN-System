@@ -1,7 +1,7 @@
 # LayoutXpert 系統功能清單
 
 > **Purpose**: 供 PM 與 DevOps 了解目前系統支援的功能，作為後續改進與需求規劃的基礎。
-> **Date**: 2026-03-11
+> **Date**: 2026-03-19
 > **Version**: MVP (in-memory store, no persistent database)
 
 ---
@@ -311,7 +311,7 @@ LayoutXpert 是一個用於 **IC 佈局圖資料** 的自動化 GNN（Graph Neur
 5. **無模型匯出** — 訓練完成的模型無法下載或部署。
 6. **二元混淆矩陣** — 僅支援 2x2 混淆矩陣，多元分類無法正確顯示。
 7. **無即時推播** — 訓練進度使用 2 秒 Polling，非 WebSocket。
-8. ~~**API URL 硬編碼**~~ — 已修正，fallback URL 改為 `http://localhost:8000`。
+8. **API URL 設定** — 已修正，fallback URL 為 `http://localhost:8000`，可透過環境變數覆寫。
 
 ### 效能限制
 
@@ -322,12 +322,11 @@ LayoutXpert 是一個用於 **IC 佈局圖資料** 的自動化 GNN（Graph Neur
 
 ### UI/UX 限制
 
-1. ~~**無深色模式切換按鈕**~~ — 已實作，Header 右側有日/月圖示切換，localStorage 持久化。
-2. **無 Loading Skeleton** — 部分頁面已改用 Skeleton（Dashboard、Project Layout），其餘仍顯示 Spinner。
-3. ~~**無頁面轉場動畫**~~ — 已實作，使用 Framer Motion fade + slide 動畫。
-4. ~~**行動裝置不友善**~~ — 已實作，Drawer 漢堡選單 + 響應式 Header。
+1. **深色模式切換** — ✅ 已實作，Header 右側有日/月圖示切換，localStorage 持久化。
+2. **Loading Skeleton** — 部分頁面已改用 Skeleton（Dashboard、Project Layout），其餘仍顯示 Spinner。
+3. **頁面轉場動畫** — ✅ 已實作，使用 Framer Motion fade + slide 動畫。
+4. **行動裝置響應式** — ✅ 已實作，Drawer 漢堡選單 + 響應式 Header。
 5. **Inline Style 為主** — 未充分使用 Ant Design Design Token。
-6. **未使用的相依套件** — react-dropzone、react-graph-vis、tailwindcss 已安裝但未使用。
 
 ### 配色方案
 
@@ -339,8 +338,8 @@ LayoutXpert 是一個用於 **IC 佈局圖資料** 的自動化 GNN（Graph Neur
 
 ## 待改進項目
 
-詳見 [前端改進報告](./frontend-improvement-report.md)，包含 14 項改進提案，按優先順序分為：
+以下為待改進項目，按優先順序分類：
 
-- **P0（Must-have）**: Auth Guard、統一 Header、專案卡片增強、實驗層級架構
-- **P1（Should-have）**: 深淺色切換、Loading Skeleton、Dark Mode 相容、API URL 設定、多元混淆矩陣
-- **P2（Nice-to-have）**: 頁面轉場、行動裝置 Header、移除未用套件、Empty State、Design Token 重構
+- **P0（Must-have）**: 路由保護（Auth Guard）、真實 SSO 整合、持久化資料庫
+- **P1（Should-have）**: 多元分類混淆矩陣、模型匯出/下載、報告匯出（PDF/CSV）、Loading Skeleton 全頁面覆蓋
+- **P2（Nice-to-have）**: Design Token 重構、WebSocket 即時進度推播、分散式訓練佇列

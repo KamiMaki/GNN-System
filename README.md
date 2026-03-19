@@ -7,26 +7,28 @@ An automated Graph Neural Network (GNN) training platform for electronic circuit
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Frontend (Next.js)                │
-│  Login → Dashboard → Upload → Explore → Train → Report │
-└──────────────────────┬──────────────────────────────┘
-                       │ REST API
-┌──────────────────────▼──────────────────────────────┐
-│                  Backend (FastAPI)                  │
-│  Data Ingestion → Feature Engineering → AutoML      │
-│  GCN / GAT / GraphSAGE / GIN / MLP                 │
-│  Optuna HPO → PyTorch Lightning Training            │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend (Next.js)                    │
+│  Login → Dashboard → Project → Upload → Explore → Train │
+│                        → Evaluate → Report              │
+└────────────────────────┬────────────────────────────────┘
+                         │ REST API
+┌────────────────────────▼────────────────────────────────┐
+│                   Backend (FastAPI)                      │
+│  Data Ingestion → Feature Engineering → AutoML          │
+│  GCN / GAT / GraphSAGE / GIN / MLP                     │
+│  Optuna HPO → PyTorch Lightning Training                │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 16, React 19, MUI v7, Tailwind CSS v4 |
+| Frontend | Next.js 16, React 19, Ant Design 5, Recharts, Framer Motion |
 | Backend | FastAPI, PyTorch Geometric, PyTorch Lightning |
 | AutoML | Optuna (hyperparameter optimisation) |
+| Testing | pytest (backend), Vitest + Testing Library (frontend) |
 | Python env | `uv` with Python 3.11 |
 
 ---
@@ -40,11 +42,10 @@ GNN-System/
 │   │   ├── core/               # In-memory store, config
 │   │   ├── data/               # Ingestion, feature engineering, PyG conversion
 │   │   ├── models/             # GCN, GAT, GraphSAGE, GIN, MLP
-│   │   ├── routers/            # REST endpoints (datasets, tasks, projects)
+│   │   ├── routers/            # REST endpoints (projects, datasets, tasks)
 │   │   ├── schemas/            # Pydantic request/response models
 │   │   └── training/           # Optuna search + PyTorch Lightning callbacks
-│   ├── mock_data/              # Built-in 30K-node circuit dataset
-│   ├── scripts/                # Demo data generation utilities
+│   ├── mock_data/              # Built-in demo datasets (basic, dirty, edge-attrs, multi-graph)
 │   ├── tests/                  # pytest test suite
 │   ├── Dockerfile
 │   └── pyproject.toml
@@ -53,18 +54,18 @@ GNN-System/
     ├── app/
     │   ├── login/              # SSO login page
     │   ├── dashboard/          # Project overview & KPIs
-    │   ├── upload/             # CSV / GraphML file upload
-    │   ├── explore/            # Interactive graph explorer
-    │   ├── train/              # AutoML training launcher
-    │   ├── evaluate/           # Model evaluation & leaderboard
-    │   ├── projects/           # Project management
+    │   ├── projects/[id]/      # Project-scoped pages
+    │   │   ├── upload/         # CSV / GraphML file upload
+    │   │   ├── explore/        # Data analysis & feature explorer
+    │   │   ├── train/          # AutoML training launcher
+    │   │   └── evaluate/       # Model evaluation & leaderboard
     │   ├── docs/               # In-app documentation
     │   └── api-spec/           # Live API spec viewer
     ├── src/
-    │   ├── components/         # Shared UI components
+    │   ├── components/         # Shared UI components (AppHeader, KPICard, etc.)
     │   ├── contexts/           # Auth, colour-mode, project contexts
     │   ├── lib/api.ts          # Typed API client
-    │   └── theme/              # MUI dark-mode theme
+    │   └── theme/              # Ant Design dark-mode theme
     └── package.json
 ```
 
@@ -84,7 +85,7 @@ cd backend
 uv run uvicorn app.main:app --port 8000 --reload
 ```
 
-The server loads a built-in 30,000-node circuit dataset (`mock-circuit-v1`) on startup (~10 s).
+The server loads built-in demo datasets on startup (~10 s).
 API docs are available at **http://localhost:8000/docs**.
 
 ### 2. Start the Frontend
@@ -101,36 +102,74 @@ Open **http://localhost:3000** in your browser.
 
 ## Features
 
+### Project Management
+- Create projects with name and tags
+- Project dashboard with search and tag filtering
+- 4-step pipeline progress tracking (Upload → Analysis → Training → Evaluation)
+- Experiment history per project with status and metrics
+
 ### Data Management
-- Upload node/edge CSV files or GraphML graphs (single or folder-based multi-graph)
+- Upload node/edge CSV files (single or folder-based multi-graph)
 - Automatic feature engineering: z-score normalisation + one-hot encoding for cell type
+- Missing value detection and imputation (mean / median / zero)
 - Graph statistics explorer with correlation heatmaps and distribution charts
+- Support for 4 task types: node classification, node regression, graph classification, graph regression
 
 ### AutoML Training
 - 5 GNN architectures: **GCN**, **GAT**, **GraphSAGE**, **GIN**, **MLP** (baseline)
 - Optuna searches over: model type, hidden dim (32–256), layers (2–5), dropout, learning rate
-- Real-time training progress via polling
+- Real-time training progress via polling with time estimation
 - Best config and full leaderboard returned after each run
 
 ### Evaluation & Reports
-- Per-model accuracy, F1, loss metrics
-- Node-level explanation viewer (feature attribution)
-- Exportable JSON report
+- Per-model accuracy, F1, precision, recall (classification) or MSE, MAE, R² (regression)
+- Confusion matrix (classification) and residual plot (regression)
+- Training history chart (loss + metrics over epochs)
+- Top-100 trial leaderboard
 
 ---
 
 ## API Reference
 
+### Project Management
+
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/v1/upload` | Upload dataset CSV/GraphML |
-| `GET` | `/api/v1/datasets` | List all datasets |
-| `GET` | `/api/v1/datasets/{id}/explore` | Dataset statistics & feature info |
-| `POST` | `/api/v1/tasks` | Start an AutoML training task |
-| `GET` | `/api/v1/tasks` | List all tasks |
-| `GET` | `/api/v1/tasks/{id}` | Task status & progress |
-| `GET` | `/api/v1/tasks/{id}/report` | Full evaluation report |
-| `GET` | `/api/v1/tasks/{id}/explain` | Node explanation / attribution |
+| `POST` | `/api/v1/projects/` | Create a new project |
+| `GET` | `/api/v1/projects/` | List all projects |
+| `GET` | `/api/v1/projects/{id}` | Get project details |
+| `DELETE` | `/api/v1/projects/{id}` | Delete a project |
+
+### Data Upload & Analysis
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/v1/projects/{id}/upload` | Upload CSV files |
+| `POST` | `/api/v1/projects/{id}/upload-folder` | Upload folder structure |
+| `GET` | `/api/v1/projects/{id}/explore` | Dataset statistics & feature info |
+| `GET` | `/api/v1/projects/{id}/columns/{col}` | Single column analysis |
+| `POST` | `/api/v1/projects/{id}/correlation` | Compute correlation matrix |
+| `POST` | `/api/v1/projects/{id}/impute` | Impute missing values |
+| `POST` | `/api/v1/projects/{id}/confirm` | Confirm data settings |
+
+### Training & Evaluation
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/projects/{id}/estimate` | Estimate training time |
+| `POST` | `/api/v1/projects/{id}/train` | Start AutoML training |
+| `GET` | `/api/v1/projects/{id}/status` | Training progress |
+| `GET` | `/api/v1/projects/{id}/experiments` | List training runs |
+| `GET` | `/api/v1/projects/{id}/report` | Latest evaluation report |
+| `GET` | `/api/v1/projects/{id}/report/{task_id}` | Specific run report |
+
+### Demo Data
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/projects/demo-datasets` | List available demo datasets |
+| `GET` | `/api/v1/projects/sample-data` | Download sample CSV zip |
+| `POST` | `/api/v1/projects/{id}/load-demo` | Load a demo dataset |
 
 Full interactive spec: **http://localhost:8000/docs**
 
@@ -138,7 +177,7 @@ Full interactive spec: **http://localhost:8000/docs**
 
 ## Dataset Format
 
-### Node CSV (`nodes.csv`)
+### Node CSV (`nodes_train.csv`)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -150,29 +189,33 @@ Full interactive spec: **http://localhost:8000/docs**
 | `fanin`, `fanout` | int | Connectivity |
 | `label` | int | Ground-truth class |
 
-### Edge CSV (`edges.csv`)
+### Edge CSV (`edges_train.csv`)
 
 | Column | Type | Notes |
 |---|---|---|
 | `src` | string/int | Source node ID |
 | `dst` | string/int | Destination node ID |
 
+Optional test split files: `nodes_test.csv` + `edges_test.csv`. If not provided, an 80/20 train/test split is applied automatically.
+
 ---
 
 ## Development
 
-### Run Tests
+### Run Backend Tests
 
 ```bash
 cd backend
 uv run pytest tests/ -v
 ```
 
-### Frontend Tests
+### Run Frontend Tests
 
 ```bash
 cd frontend
-npm test
+npm test              # single run (vitest)
+npm run test:watch    # watch mode
+npm run test:coverage # with coverage
 ```
 
 ### Docker (Backend)
