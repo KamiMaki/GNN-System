@@ -141,16 +141,16 @@ export default function EvaluatePage() {
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
-            <div style={{
+            <div className="page-header" style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 24,
-                paddingBottom: 16,
-                borderBottom: `1px solid ${token.colorBorderSecondary}`,
             }}>
                 <div>
-                    <Title level={3} style={{ margin: 0 }}>Model Evaluation</Title>
+                    <Title level={3} style={{ margin: 0 }}>
+                        <TrophyOutlined style={{ marginRight: 8, color: token.colorWarning }} />
+                        Model Evaluation
+                    </Title>
                     <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                         Task: {report.task_type.replace('_', ' ').toUpperCase()}
                     </Text>

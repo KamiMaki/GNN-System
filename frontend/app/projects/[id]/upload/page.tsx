@@ -133,12 +133,11 @@ export default function UploadPage() {
 
     return (
         <div style={{ maxWidth: 800, margin: '0 auto', padding: '40px 24px' }}>
-            <div style={{
-                marginBottom: 24,
-                paddingBottom: 16,
-                borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            }}>
-                <Title level={3} style={{ margin: 0 }}>Upload Data</Title>
+            <div className="page-header">
+                <Title level={3} style={{ margin: 0 }}>
+                    <CloudUploadOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
+                    Upload Data
+                </Title>
                 <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                     Select a project folder containing graph data, or load a demo dataset.
                 </Text>
@@ -194,15 +193,17 @@ export default function UploadPage() {
                 <Card
                     onClick={() => folderInputRef.current?.click()}
                     hoverable
+                    className={selectedFiles.length > 0 ? 'glow-success' : ''}
                     style={{
                         textAlign: 'center',
                         border: `2px dashed ${selectedFiles.length > 0 ? token.colorSuccess : token.colorBorder}`,
                         cursor: 'pointer',
                         background: selectedFiles.length > 0
-                            ? `${token.colorSuccess}06`
+                            ? `${token.colorSuccess}08`
                             : `${token.colorPrimary}04`,
+                        transition: 'all 0.3s ease',
                     }}
-                    styles={{ body: { padding: 40 } }}
+                    styles={{ body: { padding: 48 } }}
                 >
                     <input
                         ref={folderInputRef}

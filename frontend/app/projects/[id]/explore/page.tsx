@@ -6,7 +6,7 @@ import {
     Button, Card, Tag, Select, Checkbox, Alert, Spin, Segmented, Space, Table, Typography, AutoComplete, Row, Col, Statistic, theme,
 } from 'antd';
 import {
-    CheckCircleOutlined, WarningOutlined, ArrowRightOutlined,
+    CheckCircleOutlined, WarningOutlined, ArrowRightOutlined, ExperimentOutlined,
 } from '@ant-design/icons';
 
 import {
@@ -200,16 +200,16 @@ export default function ExplorePage() {
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
-            <div style={{
+            <div className="page-header" style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 24,
-                paddingBottom: 16,
-                borderBottom: `1px solid ${token.colorBorderSecondary}`,
             }}>
                 <div>
-                    <Title level={3} style={{ margin: 0 }}>Data Analysis</Title>
+                    <Title level={3} style={{ margin: 0 }}>
+                        <ExperimentOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
+                        Data Analysis
+                    </Title>
                     <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                         Explore your data, handle missing values, and configure the learning task.
                     </Text>

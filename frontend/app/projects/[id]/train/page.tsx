@@ -188,16 +188,16 @@ export default function TrainPage() {
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
-            <div style={{
+            <div className="page-header" style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'flex-start',
-                marginBottom: 24,
-                paddingBottom: 16,
-                borderBottom: `1px solid ${token.colorBorderSecondary}`,
             }}>
                 <div>
-                    <Title level={3} style={{ margin: 0 }}>Model Training</Title>
+                    <Title level={3} style={{ margin: 0 }}>
+                        <RocketOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
+                        Model Training
+                    </Title>
                     <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                         Configure and run GNN model training with automated hyperparameter optimization.
                     </Text>
@@ -327,16 +327,27 @@ export default function TrainPage() {
                 <Col xs={24} md={12}>
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                         {taskStatus && (
-                            <Card title="Training Progress" size="small">
+                            <Card title="Training Progress" size="small" className="stat-card">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                                    <Text type="secondary">{taskStatus.status}</Text>
-                                    <Text strong>{taskStatus.progress}%</Text>
+                                    <Tag color={isCompleted ? 'green' : isFailed ? 'red' : 'processing'}>
+                                        {taskStatus.status}
+                                    </Tag>
+                                    <Text strong style={{ fontSize: 18, color: token.colorPrimary }}>
+                                        {taskStatus.progress}%
+                                    </Text>
                                 </div>
                                 <Progress
                                     percent={taskStatus.progress}
                                     showInfo={false}
                                     status={isCompleted ? 'success' : isFailed ? 'exception' : 'active'}
-                                    strokeColor={isCompleted ? token.colorSuccess : isFailed ? token.colorError : token.colorPrimary}
+                                    strokeColor={
+                                        isCompleted
+                                            ? { from: '#10b981', to: '#34d399' }
+                                            : isFailed
+                                                ? token.colorError
+                                                : { from: '#0891b2', to: '#06b6d4' }
+                                    }
+                                    strokeWidth={8}
                                 />
 
                                 <Row gutter={24} style={{ marginTop: 16 }}>
@@ -369,35 +380,53 @@ export default function TrainPage() {
                         <Card
                             title={
                                 <Space>
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRunning ? token.colorSuccess : token.colorBorder }} />
-                                    <Text type="secondary" style={{ fontSize: 12 }}>TRAINING LOG</Text>
+                                    <div className={isRunning ? 'pulse-dot' : ''} style={{
+                                        width: 10,
+                                        height: 10,
+                                        borderRadius: '50%',
+                                        background: isRunning ? '#7fd962' : token.colorBorder,
+                                        boxShadow: isRunning ? '0 0 8px rgba(127, 217, 98, 0.4)' : 'none',
+                                    }} />
+                                    <Text type="secondary" style={{ fontSize: 12, letterSpacing: 1, fontWeight: 600 }}>TRAINING LOG</Text>
                                 </Space>
                             }
                             size="small"
                             styles={{ body: { padding: 0 } }}
                         >
+                            {/* Terminal header bar */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '8px 16px',
+                                background: '#1a1e26',
+                                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            }}>
+                                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ff5f56' }} />
+                                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ffbd2e' }} />
+                                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#27c93f' }} />
+                                <Text style={{ marginLeft: 8, fontSize: 11, color: '#636a76' }}>training@layoutxpert ~ </Text>
+                            </div>
                             <div
                                 ref={logRef}
+                                className="terminal-log"
                                 style={{
                                     padding: 16,
                                     maxHeight: 400,
                                     minHeight: 200,
                                     overflowY: 'auto',
-                                    fontFamily: 'monospace',
-                                    fontSize: 13,
-                                    background: token.colorBgLayout,
                                 }}
                             >
                                 {logs.length === 0 ? (
-                                    <Text type="secondary">Waiting for training to start...</Text>
+                                    <span className="log-dim">$ waiting for training to start...</span>
                                 ) : (
                                     logs.map((line, i) => (
-                                        <div key={i} style={{
-                                            color: line.includes('FAILED') ? token.colorError :
-                                                line.includes('completed') ? token.colorSuccess : token.colorSuccessActive,
-                                            lineHeight: 1.8,
-                                        }}>
-                                            {line}
+                                        <div key={i} className={
+                                            line.includes('FAILED') ? 'log-error' :
+                                            line.includes('completed') ? 'log-success' :
+                                            line.includes('Progress') ? 'log-info' : ''
+                                        }>
+                                            <span className="log-dim">$ </span>{line}
                                         </div>
                                     ))
                                 )}
@@ -417,9 +446,9 @@ export default function TrainPage() {
                             <Tag color="blue" style={{ marginLeft: 4 }}>{experiments.length}</Tag>
                         </div>
                     }
+                    className="stat-card"
                     style={{
                         marginTop: 24,
-                        borderTop: `3px solid ${token.colorPrimary}`,
                     }}
                 >
                     <Table

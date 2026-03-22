@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, Button, Input, Radio, Checkbox, Divider, Typography, Spin, Space, theme } from 'antd';
-import { AppstoreOutlined, SafetyOutlined, BankOutlined } from '@ant-design/icons';
+import { Card, Button, Input, Radio, Checkbox, Divider, Typography, Space, theme } from 'antd';
+import { AppstoreOutlined, SafetyOutlined, BankOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 
 const { Title, Text, Link } = Typography;
@@ -27,47 +27,80 @@ export default function LoginPage() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: `
-                radial-gradient(ellipse 80% 60% at 50% -10%, ${token.colorPrimary}18 0%, transparent 60%),
-                radial-gradient(ellipse 50% 40% at 0% 50%, ${token.colorPrimary}0a 0%, transparent 50%),
-                radial-gradient(ellipse 50% 40% at 100% 50%, rgba(16, 185, 129, 0.05) 0%, transparent 50%)
-            `,
+            position: 'relative',
+            overflow: 'hidden',
         }}>
+            {/* Aurora animated background */}
+            <div className="aurora-bg" />
+
+            {/* Subtle grid pattern overlay */}
+            <div style={{
+                position: 'fixed',
+                inset: 0,
+                backgroundImage: `radial-gradient(circle at 1px 1px, ${token.colorTextQuaternary} 1px, transparent 0)`,
+                backgroundSize: '40px 40px',
+                opacity: 0.3,
+                zIndex: 0,
+            }} />
+
             <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8 }}
+                initial={{ opacity: 0, y: 30, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                style={{ position: 'relative', zIndex: 1 }}
             >
                 <Card
+                    className="glass glow-primary"
                     style={{
-                        width: 420,
+                        width: 440,
                         textAlign: 'center',
-                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)',
+                        borderRadius: 20,
                         border: `1px solid ${token.colorBorderSecondary}`,
                     }}
+                    styles={{ body: { padding: '36px 32px' } }}
                 >
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <div style={{
-                            width: 64,
-                            height: 64,
-                            borderRadius: 16,
-                            background: `linear-gradient(135deg, ${token.colorPrimary}, ${token.colorPrimaryBg})`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            margin: '0 auto',
-                        }}>
-                            <AppstoreOutlined style={{ fontSize: 28, color: '#fff' }} />
-                        </div>
-                        <Title level={3} style={{ margin: 0 }}>LayoutXpert.AI</Title>
-                        <Space size={4}>
-                            <BankOutlined />
-                            <Text type="secondary">ChipDesign Corp.</Text>
-                        </Space>
-                        <Text type="secondary">Enterprise Single Sign-On</Text>
+                        {/* Logo icon with gradient */}
+                        <motion.div
+                            initial={{ rotate: -10, scale: 0.8 }}
+                            animate={{ rotate: 0, scale: 1 }}
+                            transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                            <div style={{
+                                width: 72,
+                                height: 72,
+                                borderRadius: 20,
+                                background: `linear-gradient(135deg, ${token.colorPrimary}, #06b6d4, #10b981)`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                margin: '0 auto',
+                                boxShadow: `0 8px 32px rgba(8, 145, 178, 0.3)`,
+                            }}>
+                                <AppstoreOutlined style={{ fontSize: 32, color: '#fff' }} />
+                            </div>
+                        </motion.div>
 
-                        <div style={{ textAlign: 'left' }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>Authentication Provider</Text>
+                        <div>
+                            <Title level={3} style={{ margin: 0, letterSpacing: '-0.5px' }}>
+                                <span className="gradient-text">LayoutXpert</span>
+                                <span style={{ opacity: 0.5, fontWeight: 400 }}>.AI</span>
+                            </Title>
+                            <Space size={4} style={{ marginTop: 4 }}>
+                                <BankOutlined style={{ opacity: 0.5 }} />
+                                <Text type="secondary" style={{ fontSize: 13 }}>ChipDesign Corp.</Text>
+                            </Space>
+                        </div>
+
+                        <Text type="secondary" style={{ fontSize: 13 }}>Enterprise Single Sign-On</Text>
+
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.5, delay: 0.3 }}
+                            style={{ textAlign: 'left' }}
+                        >
+                            <Text type="secondary" style={{ fontSize: 12, fontWeight: 500 }}>Authentication Provider</Text>
                             <Radio.Group
                                 value={ssoProvider}
                                 onChange={e => setSsoProvider(e.target.value)}
@@ -77,25 +110,37 @@ export default function LoginPage() {
                                 <Radio value="saml">SAML 2.0</Radio>
                                 <Radio value="azure">Azure AD</Radio>
                             </Radio.Group>
-                        </div>
+                        </motion.div>
 
-                        <Divider style={{ margin: '8px 0' }} />
+                        <Divider style={{ margin: '4px 0' }} />
 
                         <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
                             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                                <Input
-                                    placeholder="Corporate ID / Data Center Email"
-                                    value={email}
-                                    onChange={e => setEmail(e.target.value)}
-                                    autoFocus
-                                    size="large"
-                                />
-                                <Input.Password
-                                    placeholder="Access Token / Password"
-                                    value={password}
-                                    onChange={e => setPassword(e.target.value)}
-                                    size="large"
-                                />
+                                <div>
+                                    <Text type="secondary" style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, display: 'block' }}>
+                                        Corporate ID
+                                    </Text>
+                                    <Input
+                                        placeholder="username@chipdesign.corp"
+                                        value={email}
+                                        onChange={e => setEmail(e.target.value)}
+                                        autoFocus
+                                        size="large"
+                                        style={{ borderRadius: 10 }}
+                                    />
+                                </div>
+                                <div>
+                                    <Text type="secondary" style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, display: 'block' }}>
+                                        Access Token
+                                    </Text>
+                                    <Input.Password
+                                        placeholder="Enter your access token"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        size="large"
+                                        style={{ borderRadius: 10 }}
+                                    />
+                                </div>
 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <Checkbox
@@ -115,32 +160,41 @@ export default function LoginPage() {
                                     block
                                     size="large"
                                     loading={isLoading}
+                                    icon={<ThunderboltOutlined />}
+                                    style={{
+                                        height: 44,
+                                        borderRadius: 10,
+                                        fontWeight: 600,
+                                        background: `linear-gradient(135deg, ${token.colorPrimary}, #06b6d4)`,
+                                        border: 'none',
+                                        boxShadow: '0 4px 16px rgba(8, 145, 178, 0.3)',
+                                    }}
                                 >
                                     Authenticate
                                 </Button>
                             </Space>
                         </form>
 
-                        <Divider style={{ margin: '8px 0' }} />
+                        <Divider style={{ margin: '4px 0' }} />
                         <Space size={4}>
-                            <SafetyOutlined style={{ opacity: 0.5 }} />
-                            <Text type="secondary" style={{ fontSize: 12 }}>
+                            <SafetyOutlined style={{ opacity: 0.4 }} />
+                            <Text type="secondary" style={{ fontSize: 11 }}>
                                 Protected by Enterprise SSO | v2.0
                             </Text>
                         </Space>
                     </Space>
                 </Card>
 
-                {/* Subtle decorative dots pattern */}
-                <div style={{
-                    textAlign: 'center',
-                    marginTop: 24,
-                    opacity: 0.4,
-                }}>
-                    <Text type="secondary" style={{ fontSize: 11, letterSpacing: 2 }}>
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 0.4 }}
+                    transition={{ duration: 1, delay: 0.6 }}
+                    style={{ textAlign: 'center', marginTop: 24 }}
+                >
+                    <Text type="secondary" style={{ fontSize: 11, letterSpacing: 3, fontWeight: 500 }}>
                         GNN-POWERED LAYOUT ANALYSIS
                     </Text>
-                </div>
+                </motion.div>
             </motion.div>
         </div>
     );
