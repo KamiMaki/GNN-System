@@ -5,14 +5,22 @@ import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { getTheme } from '@/theme/theme';
 import { ColorModeContext } from '@/contexts/ColorModeContext';
 
-/** Syncs <body> background/text color with the active Ant Design theme token */
-function BodyStyleSync() {
+/** Syncs <html> data-theme attribute and <body> background/text color with active theme */
+function BodyStyleSync({ mode }: { mode: 'light' | 'dark' }) {
   const { token } = antdTheme.useToken();
 
   React.useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-theme', mode);
+    // Also toggle .dark class for CSS selectors using that convention
+    if (mode === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
     document.body.style.backgroundColor = token.colorBgContainer;
     document.body.style.color = token.colorText;
-  }, [token.colorBgContainer, token.colorText]);
+  }, [token.colorBgContainer, token.colorText, mode]);
 
   return null;
 }
@@ -46,7 +54,7 @@ export default function ThemeRegistry({ children }: { children: React.ReactNode 
       <ColorModeContext.Provider value={colorMode}>
         <ConfigProvider theme={themeConfig}>
           <App>
-            <BodyStyleSync />
+            <BodyStyleSync mode={mode} />
             {children}
           </App>
         </ConfigProvider>
