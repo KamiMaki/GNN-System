@@ -60,7 +60,7 @@ function seededRandom(seed: number) {
   };
 }
 
-function pick<T>(arr: T[], rand: () => number): T {
+function pick<T>(arr: readonly T[], rand: () => number): T {
   return arr[Math.floor(rand() * arr.length)];
 }
 

@@ -578,68 +578,6 @@ export const uploadProjectFolder = async (
 };
 
 // ════════════════════════════════════════════
-// Legacy API Functions (backward compat)
-// ════════════════════════════════════════════
-
-export const uploadDataset = async (
-  nodesFile: File, edgesFile: File, datasetName: string,
-  taskType?: string, nodesTestFile?: File, edgesTestFile?: File,
-): Promise<DatasetSummary> => {
-  const formData = new FormData();
-  formData.append('nodes_file', nodesFile);
-  formData.append('edges_file', edgesFile);
-  formData.append('dataset_name', datasetName || nodesFile.name.replace(/\.[^.]+$/, ''));
-  if (taskType) formData.append('task_type', taskType);
-  if (nodesTestFile) formData.append('nodes_test_file', nodesTestFile);
-  if (edgesTestFile) formData.append('edges_test_file', edgesTestFile);
-  const res = await fetch(`${API_BASE}/api/v1/upload`, { method: 'POST', body: formData });
-  if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
-  return res.json();
-};
-
-export const startTraining = async (
-  datasetId: string, taskType: string = 'node_classification'
-): Promise<{ task_id: string; status: string }> => {
-  const res = await fetch(`${API_BASE}/api/v1/tasks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dataset_id: datasetId, task_type: taskType }),
-  });
-  if (!res.ok) throw new Error(`Training start failed: ${res.statusText}`);
-  return res.json();
-};
-
-export const getTaskStatus = async (taskId: string): Promise<TaskStatus> => {
-  const res = await fetch(`${API_BASE}/api/v1/tasks/${taskId}`);
-  if (!res.ok) throw new Error(`Task not found: ${taskId}`);
-  return res.json();
-};
-
-export const getDatasetExplore = async (datasetId: string): Promise<ExploreData> => {
-  const res = await fetch(`${API_BASE}/api/v1/datasets/${datasetId}/explore`);
-  if (!res.ok) throw new Error(`Explore failed: ${res.statusText}`);
-  return res.json();
-};
-
-export const getTaskReport = async (taskId: string): Promise<Report> => {
-  const res = await fetch(`${API_BASE}/api/v1/tasks/${taskId}/report`);
-  if (!res.ok) throw new Error(`Report failed: ${res.statusText}`);
-  return res.json();
-};
-
-export const listDatasets = async (): Promise<DatasetSummary[]> => {
-  const res = await fetch(`${API_BASE}/api/v1/datasets`);
-  if (!res.ok) throw new Error(`List datasets failed`);
-  return res.json();
-};
-
-export const listTasks = async (): Promise<TaskStatus[]> => {
-  const res = await fetch(`${API_BASE}/api/v1/tasks`);
-  if (!res.ok) throw new Error(`List tasks failed`);
-  return res.json();
-};
-
-// ════════════════════════════════════════════
 // Model Registry API Functions
 // ════════════════════════════════════════════
 

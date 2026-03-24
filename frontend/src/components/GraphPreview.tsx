@@ -51,17 +51,20 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
 
   const graphData = useMemo(() => {
     const nodes = graphSample.nodes.map(n => ({
-      id: n.id,
+      id: String(n.id),
       label: n.label,
       color: getNodeColor(n),
       _data: n,
     }));
-    const links = graphSample.edges.map((e, i) => ({
-      id: `e-${i}`,
-      source: e.source,
-      target: e.target,
-      _data: e,
-    }));
+    const nodeIdSet = new Set(nodes.map(n => n.id));
+    const links = graphSample.edges
+      .map((e, i) => ({
+        id: `e-${i}`,
+        source: String(e.source),
+        target: String(e.target),
+        _data: e,
+      }))
+      .filter(l => nodeIdSet.has(l.source) && nodeIdSet.has(l.target));
     return { nodes, links };
   }, [graphSample]);
 

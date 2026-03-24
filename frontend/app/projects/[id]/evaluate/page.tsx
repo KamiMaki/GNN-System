@@ -67,6 +67,7 @@ export default function EvaluatePage() {
     const [error, setError] = useState<string | null>(null);
     const [predFilter, setPredFilter] = useState<string>('all');
     const [predSearch, setPredSearch] = useState('');
+    const [predPageSize, setPredPageSize] = useState(20);
 
     useEffect(() => {
         if (!projectId) return;
@@ -332,8 +333,14 @@ export default function EvaluatePage() {
                     >
                         <Table
                             columns={predColumns}
-                            dataSource={filteredPredictions.map(p => ({ ...p, key: p.node_id }))}
-                            pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
+                            dataSource={filteredPredictions.map((p, i) => ({ ...p, key: `${p.node_id}-${i}` }))}
+                            pagination={{
+                                pageSize: predPageSize,
+                                showSizeChanger: true,
+                                pageSizeOptions: ['10', '20', '50', '100'],
+                                showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+                                onShowSizeChange: (_, size) => setPredPageSize(size),
+                            }}
                             size="small"
                             scroll={{ y: 500 }}
                             rowClassName={(record: any) =>
