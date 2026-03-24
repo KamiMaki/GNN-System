@@ -18,7 +18,7 @@ import {
     GenericExploreData, ColumnInfo, ColumnStats, NumericColumnStats, CategoricalColumnStats,
     LabelValidationResult,
 } from '@/lib/api';
-import { MOCK_GRAPH_DATASETS, MockGraphDataset } from '@/lib/mockGraphData';
+import { MOCK_GRAPH_DATASETS } from '@/lib/mockGraphData';
 import GraphPreview from '@/components/GraphPreview';
 
 const { Title, Text } = Typography;

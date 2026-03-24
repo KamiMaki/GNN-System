@@ -1,8 +1,8 @@
 // ══════════════════════════════════════════════════════════════
-// Mock Graph Data for 3 task types:
-//   1. Single Graph — Node Prediction
-//   2. Multi Graph  — Node Prediction
-//   3. Multi Graph  — Graph Prediction
+// Mock Graph Data — realistic IC / circuit graph datasets
+//   1. Single Graph — Node Prediction  (cell criticality)
+//   2. Multi Graph  — Node Prediction  (block-level cell type)
+//   3. Multi Graph  — Graph Prediction (block quality)
 // ══════════════════════════════════════════════════════════════
 
 export interface MockNode {
@@ -51,7 +51,7 @@ export interface MockGraphDataset {
   };
 }
 
-// ── Helper: deterministic pseudo-random ──
+// ── Helper ──
 function seededRandom(seed: number) {
   let s = seed;
   return () => {
@@ -60,167 +60,201 @@ function seededRandom(seed: number) {
   };
 }
 
+function pick<T>(arr: T[], rand: () => number): T {
+  return arr[Math.floor(rand() * arr.length)];
+}
+
+// ── Realistic cell types & net types ──
+const CELL_TYPES = ['INV', 'NAND2', 'NOR2', 'BUF', 'DFF', 'MUX2', 'AOI21', 'XOR2', 'LATCH', 'TGATE'] as const;
+const DRIVE_STRENGTHS = ['X1', 'X2', 'X4', 'X8'] as const;
+const NET_TYPES = ['signal', 'clock', 'reset', 'scan'] as const;
+
 // ══════════════════════════════════════════
 // 1. Single Graph — Node Prediction
+//    Classify each cell: Normal / Critical / Warning
 // ══════════════════════════════════════════
 function buildSingleGraphNodePrediction(): MockGraphDataset {
   const rand = seededRandom(42);
   const classes = ['Normal', 'Critical', 'Warning'];
+
   const nodes: MockNode[] = [];
   const edges: MockEdge[] = [];
 
-  for (let i = 0; i < 30; i++) {
-    const trueClass = classes[Math.floor(rand() * classes.length)];
-    const correct = rand() > 0.15;
-    const predicted = correct ? trueClass : classes[Math.floor(rand() * classes.length)];
+  for (let i = 0; i < 35; i++) {
+    const cellType = pick(CELL_TYPES, rand);
+    const drive = pick(DRIVE_STRENGTHS, rand);
+    const fanout = Math.floor(rand() * 6) + 1;
+    const slackNs = +(rand() * 2 - 0.3).toFixed(3);
+    const isCritical = slackNs < 0.2;
+    const isWarning = !isCritical && slackNs < 0.6;
+    const trueClass = isCritical ? 'Critical' : isWarning ? 'Warning' : 'Normal';
+    const correct = rand() > 0.13;
+    const predicted = correct ? trueClass : pick(classes, rand);
+
     nodes.push({
-      id: `n${i}`,
-      label: `Node ${i}`,
+      id: `c${i}`,
+      label: `${cellType}_${drive}_${i}`,
       attributes: {
-        degree: Math.floor(rand() * 8) + 1,
-        feature_1: +(rand() * 10).toFixed(2),
-        feature_2: +(rand() * 5 - 2).toFixed(2),
-        cluster: ['A', 'B', 'C'][Math.floor(rand() * 3)],
+        cell_type: cellType,
+        drive_strength: drive,
+        fanout,
+        logic_depth: Math.floor(rand() * 12) + 1,
+        slack_ns: slackNs,
+        cell_area_um2: +(0.5 + rand() * 4).toFixed(2),
+        x_coord: +(rand() * 1000).toFixed(1),
+        y_coord: +(rand() * 800).toFixed(1),
       },
       trueLabel: trueClass,
       predictedLabel: predicted,
-      confidence: +(0.5 + rand() * 0.5).toFixed(3),
+      confidence: +(0.52 + rand() * 0.48).toFixed(3),
     });
   }
 
-  // Create edges — sparse connected graph
-  for (let i = 1; i < 30; i++) {
+  // Build connectivity: spanning tree + extra wires
+  for (let i = 1; i < 35; i++) {
     const target = Math.floor(rand() * i);
-    edges.push({ source: `n${i}`, target: `n${target}`, attributes: { weight: +(rand()).toFixed(3) } });
+    const netType = pick(NET_TYPES, rand);
+    edges.push({
+      source: `c${i}`, target: `c${target}`,
+      attributes: { net_type: netType, wire_length_um: +(1 + rand() * 50).toFixed(1), capacitance_fF: +(rand() * 30).toFixed(2) },
+    });
   }
-  // Add extra edges for richer structure
-  for (let i = 0; i < 20; i++) {
-    const a = Math.floor(rand() * 30);
-    let b = Math.floor(rand() * 30);
-    if (a === b) b = (b + 1) % 30;
-    if (!edges.find(e => (e.source === `n${a}` && e.target === `n${b}`) || (e.source === `n${b}` && e.target === `n${a}`))) {
-      edges.push({ source: `n${a}`, target: `n${b}`, attributes: { weight: +(rand()).toFixed(3) } });
+  for (let j = 0; j < 22; j++) {
+    const a = Math.floor(rand() * 35);
+    let b = Math.floor(rand() * 35);
+    if (a === b) b = (b + 1) % 35;
+    if (!edges.find(e => (e.source === `c${a}` && e.target === `c${b}`) || (e.source === `c${b}` && e.target === `c${a}`))) {
+      edges.push({
+        source: `c${a}`, target: `c${b}`,
+        attributes: { net_type: pick(NET_TYPES, rand), wire_length_um: +(1 + rand() * 50).toFixed(1), capacitance_fF: +(rand() * 30).toFixed(2) },
+      });
     }
   }
 
   return {
     id: 'single-graph-node-pred',
-    name: 'Circuit Node Classification',
-    description: 'Single graph with 30 nodes — classify each node as Normal / Critical / Warning.',
+    name: 'Timing Criticality Classification',
+    description: 'Single netlist graph (35 cells) — classify each cell as Normal / Critical / Warning based on timing slack.',
     taskLevel: 'node',
     taskType: 'classification',
     isMultiGraph: false,
-    graphs: [{
-      graphId: 'g0',
-      graphName: 'Circuit Graph',
-      nodes,
-      edges,
-    }],
+    graphs: [{ graphId: 'g0', graphName: 'ALU Datapath', nodes, edges }],
     nodeClasses: classes,
-    metrics: { accuracy: 0.8667, f1: 0.8521, precision: 0.8612, recall: 0.8433 },
+    metrics: { accuracy: 0.8571, f1: 0.8402, precision: 0.8533, recall: 0.8275 },
   };
 }
 
 // ══════════════════════════════════════════
 // 2. Multi Graph — Node Prediction
+//    Multiple sub-circuit blocks, classify cells
 // ══════════════════════════════════════════
 function buildMultiGraphNodePrediction(): MockGraphDataset {
   const rand = seededRandom(123);
-  const classes = ['Type-A', 'Type-B'];
+  const classes = ['Logic', 'Sequential'];
+  const blockNames = ['Decoder', 'Encoder', 'Arbiter', 'FIFO_Ctrl', 'FSM', 'Shifter'];
   const graphs: MockGraph[] = [];
 
-  for (let gi = 0; gi < 8; gi++) {
-    const nodeCount = 8 + Math.floor(rand() * 8);
+  for (let gi = 0; gi < 6; gi++) {
+    const nodeCount = 10 + Math.floor(rand() * 10);
     const nodes: MockNode[] = [];
     const edges: MockEdge[] = [];
 
     for (let i = 0; i < nodeCount; i++) {
-      const trueClass = classes[rand() > 0.45 ? 0 : 1];
-      const correct = rand() > 0.12;
-      const predicted = correct ? trueClass : classes[1 - classes.indexOf(trueClass)];
+      const cellType = pick(CELL_TYPES, rand);
+      const isSeq = cellType === 'DFF' || cellType === 'LATCH';
+      const trueClass = isSeq ? 'Sequential' : 'Logic';
+      const correct = rand() > 0.1;
+      const predicted = correct ? trueClass : (trueClass === 'Logic' ? 'Sequential' : 'Logic');
+
       nodes.push({
-        id: `g${gi}_n${i}`,
-        label: `N${i}`,
+        id: `g${gi}_c${i}`,
+        label: `${cellType}_${pick(DRIVE_STRENGTHS, rand)}`,
         attributes: {
-          feat_x: +(rand() * 8).toFixed(2),
-          feat_y: +(rand() * 6).toFixed(2),
-          centrality: +(rand()).toFixed(3),
+          cell_type: cellType,
+          drive_strength: pick(DRIVE_STRENGTHS, rand),
+          fanout: Math.floor(rand() * 5) + 1,
+          slack_ns: +(rand() * 1.5).toFixed(3),
+          toggle_rate: +(rand() * 0.8).toFixed(3),
         },
         trueLabel: trueClass,
         predictedLabel: predicted,
-        confidence: +(0.55 + rand() * 0.45).toFixed(3),
+        confidence: +(0.6 + rand() * 0.4).toFixed(3),
       });
     }
 
     for (let i = 1; i < nodeCount; i++) {
       edges.push({
-        source: `g${gi}_n${i}`,
-        target: `g${gi}_n${Math.floor(rand() * i)}`,
-        attributes: { type: rand() > 0.5 ? 'directed' : 'undirected' },
+        source: `g${gi}_c${i}`,
+        target: `g${gi}_c${Math.floor(rand() * i)}`,
+        attributes: { net_type: pick(NET_TYPES, rand), delay_ps: +(rand() * 200).toFixed(1) },
       });
     }
-    for (let j = 0; j < Math.floor(nodeCount * 0.5); j++) {
+    for (let j = 0; j < Math.floor(nodeCount * 0.4); j++) {
       const a = Math.floor(rand() * nodeCount);
       let b = Math.floor(rand() * nodeCount);
       if (a === b) b = (b + 1) % nodeCount;
       edges.push({
-        source: `g${gi}_n${a}`,
-        target: `g${gi}_n${b}`,
-        attributes: { type: rand() > 0.5 ? 'directed' : 'undirected' },
+        source: `g${gi}_c${a}`,
+        target: `g${gi}_c${b}`,
+        attributes: { net_type: pick(NET_TYPES, rand), delay_ps: +(rand() * 200).toFixed(1) },
       });
     }
 
-    graphs.push({
-      graphId: `g${gi}`,
-      graphName: `Molecule ${gi + 1}`,
-      nodes,
-      edges,
-    });
+    graphs.push({ graphId: `g${gi}`, graphName: blockNames[gi], nodes, edges });
   }
 
   return {
     id: 'multi-graph-node-pred',
-    name: 'Molecular Atom Classification',
-    description: '8 molecular graphs — classify each atom (node) as Type-A or Type-B.',
+    name: 'Cell Type Classification',
+    description: '6 sub-circuit blocks — classify each cell node as Logic or Sequential.',
     taskLevel: 'node',
     taskType: 'classification',
     isMultiGraph: true,
     graphs,
     nodeClasses: classes,
-    metrics: { accuracy: 0.8824, f1: 0.8750, precision: 0.8889, recall: 0.8615 },
+    metrics: { accuracy: 0.9048, f1: 0.8889, precision: 0.9032, recall: 0.8750 },
   };
 }
 
 // ══════════════════════════════════════════
 // 3. Multi Graph — Graph Prediction
+//    Predict block-level quality: Pass / Marginal / Fail
 // ══════════════════════════════════════════
 function buildMultiGraphGraphPrediction(): MockGraphDataset {
   const rand = seededRandom(456);
-  const classes = ['Toxic', 'Non-Toxic', 'Unknown'];
+  const classes = ['Pass', 'Marginal', 'Fail'];
+  const blockNames = [
+    'PLL_Core', 'ADC_Frontend', 'DAC_Output', 'LDO_Reg',
+    'IO_Pad_Ring', 'SRAM_Macro', 'Clock_Tree', 'Scan_Chain',
+    'Power_Grid', 'ESD_Clamp', 'SerDes_TX', 'SerDes_RX',
+  ];
   const graphs: MockGraph[] = [];
 
   for (let gi = 0; gi < 12; gi++) {
-    const nodeCount = 5 + Math.floor(rand() * 6);
+    const nodeCount = 6 + Math.floor(rand() * 7);
     const nodes: MockNode[] = [];
     const edges: MockEdge[] = [];
 
     for (let i = 0; i < nodeCount; i++) {
+      const cellType = pick(CELL_TYPES, rand);
       nodes.push({
-        id: `g${gi}_n${i}`,
-        label: `Atom ${i}`,
+        id: `g${gi}_c${i}`,
+        label: `${cellType}_${pick(DRIVE_STRENGTHS, rand)}`,
         attributes: {
-          element: ['C', 'N', 'O', 'S', 'H'][Math.floor(rand() * 5)],
-          charge: +(rand() * 2 - 1).toFixed(2),
-          mass: +(10 + rand() * 22).toFixed(1),
+          cell_type: cellType,
+          drive_strength: pick(DRIVE_STRENGTHS, rand),
+          power_uW: +(0.1 + rand() * 5).toFixed(2),
+          leakage_nA: +(rand() * 100).toFixed(1),
+          area_um2: +(0.3 + rand() * 3).toFixed(2),
         },
       });
     }
 
     for (let i = 1; i < nodeCount; i++) {
       edges.push({
-        source: `g${gi}_n${i}`,
-        target: `g${gi}_n${Math.floor(rand() * i)}`,
-        attributes: { bond: ['single', 'double', 'aromatic'][Math.floor(rand() * 3)] },
+        source: `g${gi}_c${i}`,
+        target: `g${gi}_c${Math.floor(rand() * i)}`,
+        attributes: { net_type: pick(NET_TYPES, rand), resistance_ohm: +(rand() * 50).toFixed(1) },
       });
     }
     for (let j = 0; j < Math.floor(nodeCount * 0.3); j++) {
@@ -228,19 +262,19 @@ function buildMultiGraphGraphPrediction(): MockGraphDataset {
       let b = Math.floor(rand() * nodeCount);
       if (a === b) b = (b + 1) % nodeCount;
       edges.push({
-        source: `g${gi}_n${a}`,
-        target: `g${gi}_n${b}`,
-        attributes: { bond: ['single', 'double'][Math.floor(rand() * 2)] },
+        source: `g${gi}_c${a}`,
+        target: `g${gi}_c${b}`,
+        attributes: { net_type: pick(NET_TYPES, rand), resistance_ohm: +(rand() * 50).toFixed(1) },
       });
     }
 
-    const trueClass = classes[Math.floor(rand() * classes.length)];
-    const correct = rand() > 0.2;
-    const predicted = correct ? trueClass : classes[Math.floor(rand() * classes.length)];
+    const trueClass = pick(classes, rand);
+    const correct = rand() > 0.18;
+    const predicted = correct ? trueClass : pick(classes, rand);
 
     graphs.push({
       graphId: `g${gi}`,
-      graphName: `Compound ${String.fromCharCode(65 + gi)}`,
+      graphName: blockNames[gi],
       nodes,
       edges,
       graphLabel: trueClass,
@@ -251,8 +285,8 @@ function buildMultiGraphGraphPrediction(): MockGraphDataset {
 
   return {
     id: 'multi-graph-graph-pred',
-    name: 'Compound Toxicity Prediction',
-    description: '12 compound graphs — predict graph-level toxicity class (Toxic / Non-Toxic / Unknown).',
+    name: 'Block Quality Prediction',
+    description: '12 IP blocks — predict graph-level quality: Pass / Marginal / Fail.',
     taskLevel: 'graph',
     taskType: 'classification',
     isMultiGraph: true,
