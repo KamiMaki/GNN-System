@@ -1,4 +1,4 @@
-"""Generate mock data CSVs for the LayoutXpert GNN backend.
+"""Generate mock data CSVs for the GraphX.AI GNN backend.
 
 Produces:
   1. Original large-scale mock dataset (30K nodes) at mock_data/

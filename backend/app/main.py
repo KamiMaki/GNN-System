@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="LayoutXpert GNN API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="GraphX.AI GNN API", version="0.3.0", lifespan=lifespan)
 app.add_middleware(LimitUploadSizeMiddleware)
 
 _allowed_origins = os.environ.get(

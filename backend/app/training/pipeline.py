@@ -71,7 +71,12 @@ def run_training_task(task_id: str) -> None:
         n_trials = task.get("n_trials", settings.OPTUNA_TRIALS)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        store.update_task(task_id, device=device)
+        if device == "cuda":
+            cuda_version = torch.version.cuda or "unknown"
+            gpu_name = torch.cuda.get_device_name(0)
+            store.update_task(task_id, device=f"cuda ({gpu_name}, CUDA {cuda_version})")
+        else:
+            store.update_task(task_id, device=device)
 
         # --- PREPROCESSING ---
         store.update_task(task_id, status="PREPROCESSING", progress=5)

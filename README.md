@@ -1,10 +1,10 @@
-# LayoutXpert — GNN AutoML Platform for IC Layout Analysis
+# GraphX.AI — GNN AutoML Platform for IC Layout Analysis
 
 <p align="center">
   <strong>Upload circuit graph data → AutoML-powered model search → Structured evaluation reports</strong>
 </p>
 
-LayoutXpert is an end-to-end **Graph Neural Network (GNN) AutoML platform** purpose-built for IC (Integrated Circuit) layout and EDA (Electronic Design Automation) data. It provides a guided 4-step workflow — from data upload to model evaluation — through a modern, responsive web interface.
+GraphX.AI is an end-to-end **Graph Neural Network (GNN) AutoML platform** purpose-built for IC (Integrated Circuit) layout and EDA (Electronic Design Automation) data. It provides a guided 4-step workflow — from data upload to model evaluation — through a modern, responsive web interface.
 
 ---
 
@@ -30,7 +30,7 @@ Register trained models, manage their metadata, and re-evaluate them on new data
 
 ---
 
-## Why LayoutXpert?
+## Why GraphX.AI?
 
 | Advantage | Description |
 |-----------|-------------|
@@ -172,7 +172,7 @@ Open **http://localhost:3000** in your browser.
 ## Project Structure
 
 ```
-LayoutXpert/
+GraphX.AI/
 ├── backend/                        # FastAPI backend
 │   ├── app/
 │   │   ├── core/                   # In-memory store, config

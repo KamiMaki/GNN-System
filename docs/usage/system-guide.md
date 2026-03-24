@@ -1,4 +1,4 @@
-# LayoutXpert 系統使用指南
+# GraphX.AI 系統使用指南
 
 **版本：** 0.2.0
 **最後更新：** 2026-03-17
@@ -23,7 +23,7 @@
 
 ## 1. 系統概覽
 
-LayoutXpert 是一套 **GNN (圖神經網路) AutoML 平台**，專為晶片佈局與 EDA (Electronic Design Automation) 資料設計。
+GraphX.AI 是一套 **GNN (圖神經網路) AutoML 平台**，專為晶片佈局與 EDA (Electronic Design Automation) 資料設計。
 
 ### 核心流程
 

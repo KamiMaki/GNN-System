@@ -639,8 +639,8 @@ wheels = [
 ]
 
 [[package]]
-name = "layoutxpert-backend"
-version = "0.1.0"
+name = "graphx-backend"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
