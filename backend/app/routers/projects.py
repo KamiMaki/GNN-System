@@ -538,23 +538,44 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
 
             merged_nodes = pd.concat(all_nodes_train, ignore_index=True)
             merged_edges = pd.concat(all_edges_train, ignore_index=True)
-            explore_stats = compute_generic_explore(merged_nodes, merged_edges)
+
+            # Split merged multigraph data into train/test (80/20)
+            num_nodes = len(merged_nodes)
+            perm = torch.randperm(num_nodes)
+            split_idx = int(num_nodes * 0.8)
+            train_indices = perm[:split_idx].numpy()
+            test_indices = perm[split_idx:].numpy()
+
+            nodes_df_train = merged_nodes.iloc[train_indices].reset_index(drop=True)
+            nodes_df_test = merged_nodes.iloc[test_indices].reset_index(drop=True)
+
+            train_node_ids = set(nodes_df_train["node_id"].values)
+            test_node_ids = set(nodes_df_test["node_id"].values)
+
+            edges_df_train = merged_edges[
+                merged_edges["src_id"].isin(train_node_ids) & merged_edges["dst_id"].isin(train_node_ids)
+            ].reset_index(drop=True)
+            edges_df_test = merged_edges[
+                merged_edges["src_id"].isin(test_node_ids) & merged_edges["dst_id"].isin(test_node_ids)
+            ].reset_index(drop=True)
+
+            explore_stats = compute_generic_explore(nodes_df_train, edges_df_train)
             num_features = len([c for c in explore_stats["columns"] if c["dtype"] == "numeric"])
 
             dataset_id = str(uuid.uuid4())
             ds_record = {
                 "dataset_id": dataset_id,
                 "name": f"demo-multigraph ({len(graph_names)} graphs)",
-                "num_nodes": len(merged_nodes),
+                "num_nodes": num_nodes,
                 "num_edges": len(merged_edges),
                 "num_features": num_features,
                 "num_classes": 0,
                 "is_directed": True,
                 "task_type": "pending",
-                "nodes_df_train": merged_nodes,
-                "nodes_df_test": pd.DataFrame(),
-                "edges_df_train": merged_edges,
-                "edges_df_test": pd.DataFrame(),
+                "nodes_df_train": nodes_df_train,
+                "nodes_df_test": nodes_df_test,
+                "edges_df_train": edges_df_train,
+                "edges_df_test": edges_df_test,
                 "explore_stats": explore_stats,
                 "graph_names": graph_names,
             }

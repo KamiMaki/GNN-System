@@ -376,7 +376,7 @@ export default function TrainPage() {
                             </Card>
                         )}
 
-                        {/* Terminal Log */}
+                        {/* Training Log */}
                         <Card
                             title={
                                 <Space>
@@ -384,49 +384,39 @@ export default function TrainPage() {
                                         width: 10,
                                         height: 10,
                                         borderRadius: '50%',
-                                        background: isRunning ? '#7fd962' : token.colorBorder,
-                                        boxShadow: isRunning ? '0 0 8px rgba(127, 217, 98, 0.4)' : 'none',
+                                        background: isRunning ? token.colorSuccess : token.colorBorder,
+                                        boxShadow: isRunning ? `0 0 8px ${token.colorSuccessBg}` : 'none',
                                     }} />
                                     <Text type="secondary" style={{ fontSize: 12, letterSpacing: 1, fontWeight: 600 }}>TRAINING LOG</Text>
                                 </Space>
                             }
                             size="small"
-                            styles={{ body: { padding: 0 } }}
                         >
-                            {/* Terminal header bar */}
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                padding: '8px 16px',
-                                background: '#1a1e26',
-                                borderBottom: '1px solid rgba(255,255,255,0.06)',
-                            }}>
-                                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ff5f56' }} />
-                                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ffbd2e' }} />
-                                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#27c93f' }} />
-                                <Text style={{ marginLeft: 8, fontSize: 11, color: '#636a76' }}>training@layoutxpert ~ </Text>
-                            </div>
                             <div
                                 ref={logRef}
-                                className="terminal-log"
                                 style={{
-                                    padding: 16,
+                                    padding: 12,
                                     maxHeight: 400,
                                     minHeight: 200,
                                     overflowY: 'auto',
+                                    background: token.colorBgLayout,
+                                    borderRadius: 8,
+                                    fontSize: 13,
+                                    lineHeight: 1.8,
                                 }}
                             >
                                 {logs.length === 0 ? (
-                                    <span className="log-dim">$ waiting for training to start...</span>
+                                    <Text type="secondary">Waiting for training to start...</Text>
                                 ) : (
                                     logs.map((line, i) => (
-                                        <div key={i} className={
-                                            line.includes('FAILED') ? 'log-error' :
-                                            line.includes('completed') ? 'log-success' :
-                                            line.includes('Progress') ? 'log-info' : ''
-                                        }>
-                                            <span className="log-dim">$ </span>{line}
+                                        <div key={i} style={{
+                                            padding: '2px 0',
+                                            color: line.includes('FAILED') ? token.colorError :
+                                                   line.includes('completed') ? token.colorSuccess :
+                                                   line.includes('Progress') ? token.colorPrimary :
+                                                   token.colorText,
+                                        }}>
+                                            {line}
                                         </div>
                                     ))
                                 )}

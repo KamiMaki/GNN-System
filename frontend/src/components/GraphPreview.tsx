@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Card, Select, Tag, Descriptions, Typography, Empty, Space, Divider, theme } from 'antd';
 import { EyeOutlined, NodeIndexOutlined } from '@ant-design/icons';
 import dynamic from 'next/dynamic';
@@ -8,21 +8,19 @@ import type { MockGraph, MockNode, MockEdge, MockGraphDataset } from '@/lib/mock
 
 const { Text } = Typography;
 
-// Dynamically import reagraph (uses WebGL, must be client-only, no SSR)
-const GraphCanvas = dynamic(
-  () => import('reagraph').then(mod => mod.GraphCanvas),
+// Dynamically import react-force-graph-2d (uses Canvas, must be client-only)
+const ForceGraph2D = dynamic(
+  () => import('react-force-graph-2d'),
   { ssr: false },
 );
 
 // ── Color palette for classes ──
 const CLASS_COLORS: Record<string, string> = {
-  // Node prediction classes
   Normal: '#10b981',
   Critical: '#ef4444',
   Warning: '#f59e0b',
   Logic: '#0891b2',
   Sequential: '#8b5cf6',
-  // Graph prediction classes
   Pass: '#10b981',
   Marginal: '#f59e0b',
   Fail: '#ef4444',
@@ -41,7 +39,7 @@ const CELL_TYPE_COLORS: Record<string, string> = {
   TGATE: '#14b8a6',
 };
 
-function getNodeColor(node: MockNode, classes: string[], colorBy: 'label' | 'cell_type'): string {
+function getNodeColor(node: MockNode, colorBy: 'label' | 'cell_type'): string {
   if (colorBy === 'label' && node.trueLabel) {
     return CLASS_COLORS[node.trueLabel] || '#0891b2';
   }
@@ -61,34 +59,42 @@ export default function GraphPreview({ dataset }: GraphPreviewProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [colorBy, setColorBy] = useState<'label' | 'cell_type'>('cell_type');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(600);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   const selectedGraph = useMemo(
     () => dataset.graphs.find(g => g.graphId === selectedGraphId) || dataset.graphs[0],
     [dataset.graphs, selectedGraphId],
   );
 
-  // Convert to reagraph format
-  const reagraphNodes = useMemo(() => {
-    if (!selectedGraph) return [];
-    const classes = dataset.nodeClasses || [];
-    return selectedGraph.nodes.map(n => ({
+  // Convert to force-graph format
+  const graphData = useMemo(() => {
+    if (!selectedGraph) return { nodes: [], links: [] };
+    const nodes = selectedGraph.nodes.map(n => ({
       id: n.id,
       label: n.label,
-      fill: getNodeColor(n, classes, colorBy),
-      data: n,
+      color: getNodeColor(n, colorBy),
+      _data: n,
     }));
-  }, [selectedGraph, dataset.nodeClasses, colorBy]);
-
-  const reagraphEdges = useMemo(() => {
-    if (!selectedGraph) return [];
-    return selectedGraph.edges.map((e, i) => ({
+    const links = selectedGraph.edges.map((e, i) => ({
       id: `e-${i}`,
       source: e.source,
       target: e.target,
-      label: e.attributes?.net_type as string || '',
-      data: e,
+      _data: e,
     }));
-  }, [selectedGraph]);
+    return { nodes, links };
+  }, [selectedGraph, colorBy]);
 
   // Detail panel data
   const detailNode = useMemo(() => {
@@ -99,15 +105,48 @@ export default function GraphPreview({ dataset }: GraphPreviewProps) {
 
   const detailEdgeInfo = useMemo(() => {
     if (!selectedGraph || !detailNode) return null;
-    const connected = selectedGraph.edges.filter(
+    return selectedGraph.edges.filter(
       e => e.source === detailNode.id || e.target === detailNode.id,
     );
-    return connected;
   }, [selectedGraph, detailNode]);
 
   const handleNodeClick = useCallback((node: any) => {
-    setSelectedNodeId(prev => prev === node.id ? null : node.id);
+    setSelectedNodeId((prev: string | null) => prev === node.id ? null : node.id);
   }, []);
+
+  const handleNodeHover = useCallback((node: any) => {
+    setHoveredNodeId(node ? node.id : null);
+  }, []);
+
+  const nodeCanvasObject = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const size = 5;
+    const isSelected = node.id === selectedNodeId;
+    const isHovered = node.id === hoveredNodeId;
+
+    // Draw node circle
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+    ctx.fillStyle = node.color || '#0891b2';
+    ctx.fill();
+
+    // Highlight ring for selected/hovered
+    if (isSelected || isHovered) {
+      ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = isSelected ? 2 : 1;
+      ctx.stroke();
+    }
+
+    // Draw label when zoomed in enough
+    if (globalScale > 1.5) {
+      const label = node.label || node.id;
+      const fontSize = Math.max(3, 10 / globalScale);
+      ctx.font = `${fontSize}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = token.colorText || '#333';
+      ctx.fillText(label, node.x, node.y + size + 2);
+    }
+  }, [selectedNodeId, hoveredNodeId, token.colorText]);
 
   if (!selectedGraph) return <Empty description="No graph data available" />;
 
@@ -183,43 +222,42 @@ export default function GraphPreview({ dataset }: GraphPreviewProps) {
         }
       </div>
 
-      {/* reagraph Canvas + Detail Panel side-by-side */}
+      {/* Graph Canvas + Detail Panel side-by-side */}
       <div style={{ display: 'flex', gap: 16 }}>
         {/* Graph Canvas */}
-        <div style={{
-          flex: 1,
-          height: 420,
-          borderRadius: 8,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          overflow: 'hidden',
-          position: 'relative',
-          background: token.colorBgContainer,
-        }}>
-          <GraphCanvas
-            nodes={reagraphNodes}
-            edges={reagraphEdges}
-            layoutType="forceDirected2d"
-            cameraMode="pan"
-            draggable
-            selections={selectedNodeId ? [selectedNodeId] : []}
-            actives={hoveredNodeId ? [hoveredNodeId] : []}
-            onNodeClick={(node: any) => handleNodeClick(node)}
-            onNodePointerOver={(node: any) => setHoveredNodeId(node.id)}
-            onNodePointerOut={() => setHoveredNodeId(null)}
-            labelType="all"
-            defaultNodeSize={5}
-            sizingType="default"
-            theme={{
-              canvas: { background: token.colorBgContainer },
-              node: {
-                fill: token.colorPrimary,
-                label: { color: token.colorText, fontSize: 3 },
-              },
-              edge: {
-                fill: token.colorTextQuaternary,
-                label: { color: token.colorTextSecondary, fontSize: 2 },
-              },
+        <div
+          ref={containerRef}
+          style={{
+            flex: 1,
+            height: 420,
+            borderRadius: 8,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            overflow: 'hidden',
+            position: 'relative',
+            background: token.colorBgContainer,
+          }}
+        >
+          <ForceGraph2D
+            graphData={graphData}
+            width={Math.max(300, containerWidth - 2)}
+            height={418}
+            nodeCanvasObject={nodeCanvasObject}
+            nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+              ctx.beginPath();
+              ctx.arc(node.x, node.y, 7, 0, 2 * Math.PI);
+              ctx.fillStyle = color;
+              ctx.fill();
             }}
+            onNodeClick={handleNodeClick}
+            onNodeHover={handleNodeHover}
+            linkColor={() => token.colorBorderSecondary || '#e5e7eb'}
+            linkWidth={1}
+            linkDirectionalArrowLength={4}
+            linkDirectionalArrowRelPos={1}
+            backgroundColor={token.colorBgContainer || '#ffffff'}
+            cooldownTicks={80}
+            d3AlphaDecay={0.03}
+            d3VelocityDecay={0.3}
           />
         </div>
 

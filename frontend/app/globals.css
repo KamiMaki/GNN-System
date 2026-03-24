@@ -111,22 +111,6 @@ body::before {
   background-clip: text;
 }
 
-/* ===== TERMINAL STYLE ===== */
-.terminal-log {
-  background: #0a0e14;
-  color: #b3b1ad;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-  font-size: 13px;
-  line-height: 1.7;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.terminal-log .log-success { color: #7fd962; }
-.terminal-log .log-error { color: #ff6b6b; }
-.terminal-log .log-warning { color: #e6b450; }
-.terminal-log .log-info { color: #59c2ff; }
-.terminal-log .log-dim { color: #636a76; }
 
 /* ===== PULSE DOT ===== */
 @keyframes pulse {
