@@ -96,7 +96,7 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
                 onClick={() => router.push('/dashboard')}
                 style={{ fontWeight: 800, fontSize: '1rem', padding: '4px 4px' }}
             >
-                <span className="gradient-text">GraphX</span>
+                <span className="gradient-text">GraphX.AI</span>
             </Button>
         </div>
     );
@@ -251,7 +251,7 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
                 <Steps
                     current={activeIndex}
                     size="small"
-                    style={{ flex: 2, maxWidth: 500 }}
+                    style={{ flex: 2, maxWidth: 600 }}
                     onChange={handleStepClick}
                     items={STEPS.map((s, i) => ({
                         title: s.label,

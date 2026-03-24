@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-    Button, Card, Tag, Select, Checkbox, Alert, Spin, Segmented, Space, Table, Typography, AutoComplete, Row, Col, Statistic, theme,
+    Button, Card, Tag, Select, Checkbox, Alert, Spin, Segmented, Space, Table, Typography, Row, Col, Statistic, theme,
 } from 'antd';
 import {
     CheckCircleOutlined, WarningOutlined, ArrowRightOutlined, ExperimentOutlined,
@@ -15,10 +15,10 @@ import {
 
 import {
     getProjectExplore, analyzeColumn, getCorrelation, validateLabel, imputeMissing, confirmData,
+    getProjectGraphSample,
     GenericExploreData, ColumnInfo, ColumnStats, NumericColumnStats, CategoricalColumnStats,
-    LabelValidationResult,
+    LabelValidationResult, GraphSampleData,
 } from '@/lib/api';
-import { MOCK_GRAPH_DATASETS } from '@/lib/mockGraphData';
 import GraphPreview from '@/components/GraphPreview';
 
 const { Title, Text } = Typography;
@@ -59,7 +59,8 @@ export default function ExplorePage() {
     const [confirming, setConfirming] = useState(false);
     const [confirmError, setConfirmError] = useState<string | null>(null);
 
-    const [previewDatasetId, setPreviewDatasetId] = useState<string>(MOCK_GRAPH_DATASETS[0]?.id || '');
+    const [graphSample, setGraphSample] = useState<GraphSampleData | null>(null);
+    const [graphSampleLoading, setGraphSampleLoading] = useState(false);
 
     useEffect(() => {
         if (!projectId) return;
@@ -72,6 +73,12 @@ export default function ExplorePage() {
             })
             .catch(console.error)
             .finally(() => setLoading(false));
+        // Fetch graph sample for preview
+        setGraphSampleLoading(true);
+        getProjectGraphSample(projectId, 60)
+            .then(setGraphSample)
+            .catch(console.error)
+            .finally(() => setGraphSampleLoading(false));
     }, [projectId]);
 
     const handleCorrToggle = useCallback(async (col: string) => {
@@ -296,34 +303,22 @@ export default function ExplorePage() {
                 </Card>
 
                 {/* SECTION: INTERACTIVE GRAPH PREVIEW */}
-                <Card
-                    title="Interactive Graph Preview"
-                    extra={
-                        <Select
-                            value={previewDatasetId}
-                            onChange={setPreviewDatasetId}
-                            style={{ minWidth: 260 }}
-                            options={MOCK_GRAPH_DATASETS.map(d => ({
-                                value: d.id,
-                                label: (
-                                    <Space>
-                                        {d.name}
-                                        <Tag color={d.isMultiGraph ? 'geekblue' : 'cyan'} style={{ fontSize: 11 }}>
-                                            {d.isMultiGraph ? 'multi-graph' : 'single-graph'}
-                                        </Tag>
-                                    </Space>
-                                ),
-                            }))}
-                        />
-                    }
-                >
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-                        {MOCK_GRAPH_DATASETS.find(d => d.id === previewDatasetId)?.description}
-                    </Text>
-                    {(() => {
-                        const ds = MOCK_GRAPH_DATASETS.find(d => d.id === previewDatasetId);
-                        return ds ? <GraphPreview dataset={ds} /> : null;
-                    })()}
+                <Card title="Interactive Graph Preview">
+                    {graphSampleLoading ? (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
+                            <Spin />
+                        </div>
+                    ) : graphSample && graphSample.nodes.length > 0 ? (
+                        <>
+                            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                                Showing {graphSample.sample_size} of {graphSample.num_nodes_total.toLocaleString()} nodes
+                                ({graphSample.edges.length} edges in sample)
+                            </Text>
+                            <GraphPreview graphSample={graphSample} />
+                        </>
+                    ) : (
+                        <Alert type="info" showIcon message="No graph data available for preview." />
+                    )}
                 </Card>
 
                 {/* SECTION II: NODE ANALYSIS */}
@@ -480,15 +475,27 @@ export default function ExplorePage() {
                             options={TASK_TYPES}
                         />
 
-                        <AutoComplete
+                        <Select
                             placeholder="Label Column"
                             value={labelColumn || undefined}
                             onChange={setLabelColumn}
-                            options={allColumnNames.map(n => ({ value: n }))}
                             style={{ minWidth: 250 }}
+                            showSearch
                             filterOption={(input, option) =>
                                 (option?.value as string).toLowerCase().includes(input.toLowerCase())
                             }
+                            options={allColumnNames.map(name => {
+                                const info = exploreData.columns.find(c => c.name === name);
+                                return {
+                                    value: name,
+                                    label: (
+                                        <Space>
+                                            {name}
+                                            {info && <Tag color={info.dtype === 'numeric' ? 'blue' : 'cyan'} style={{ fontSize: 10 }}>{info.dtype}</Tag>}
+                                        </Space>
+                                    ),
+                                };
+                            })}
                         />
                     </Space>
 

@@ -11,9 +11,11 @@ import {
     ScatterChart, Scatter,
 } from 'recharts';
 
-import { getProjectReport, getExperimentReport, Report, SplitMetrics } from '@/lib/api';
-import { MOCK_GRAPH_DATASETS } from '@/lib/mockGraphData';
-import PredictionTable from '@/components/PredictionTable';
+import {
+    getProjectReport, getExperimentReport, Report, SplitMetrics,
+    loadDemoData, startProjectTraining, getProjectStatus, listDemoDatasets, confirmData,
+    DemoDatasetInfo,
+} from '@/lib/api';
 
 const { Title, Text } = Typography;
 
@@ -68,7 +70,9 @@ export default function EvaluatePage() {
     const [report, setReport] = useState<Report | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [predDatasetId, setPredDatasetId] = useState<string>(MOCK_GRAPH_DATASETS[0]?.id || '');
+    const [demoDatasets, setDemoDatasets] = useState<DemoDatasetInfo[]>([]);
+    const [demoLoading, setDemoLoading] = useState(false);
+    const [demoStatus, setDemoStatus] = useState<string | null>(null);
 
     useEffect(() => {
         if (!projectId) return;
@@ -80,7 +84,45 @@ export default function EvaluatePage() {
             .then(setReport)
             .catch(err => setError(err.message))
             .finally(() => setLoading(false));
+        listDemoDatasets().then(setDemoDatasets).catch(console.error);
     }, [projectId, taskIdParam]);
+
+    const handleLoadDemo = async (demoId: string) => {
+        setDemoLoading(true);
+        setDemoStatus(null);
+        try {
+            setDemoStatus('Loading demo data...');
+            await loadDemoData(projectId, demoId);
+            setDemoStatus('Confirming data...');
+            await confirmData(projectId, 'node_classification', 'is_critical');
+            setDemoStatus('Starting training (10 trials)...');
+            await startProjectTraining(projectId, [], 10);
+            // Poll until done
+            const poll = async (): Promise<void> => {
+                const status = await getProjectStatus(projectId);
+                if (status.status === 'COMPLETED') {
+                    setDemoStatus('Training complete! Loading results...');
+                    const rpt = await getProjectReport(projectId);
+                    setReport(rpt);
+                    setError(null);
+                    setDemoStatus(null);
+                } else if (status.status === 'FAILED') {
+                    setDemoStatus(null);
+                    setError('Demo training failed.');
+                } else {
+                    setDemoStatus(`Training... ${status.progress}%`);
+                    await new Promise(r => setTimeout(r, 2000));
+                    return poll();
+                }
+            };
+            await poll();
+        } catch (err: any) {
+            setError(err.message || 'Failed to load demo data');
+            setDemoStatus(null);
+        } finally {
+            setDemoLoading(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -93,7 +135,28 @@ export default function EvaluatePage() {
     if (error || !report) {
         return (
             <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
-                <Alert type="error" showIcon message={error || 'Report not available. Training may not be completed.'} />
+                <Alert type="warning" showIcon message={error || 'No training results yet. Load a demo dataset to get started.'} style={{ marginBottom: 24 }} />
+                <Card title="Quick Demo: Load & Train a Demo Dataset">
+                    <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                        Load a built-in demo dataset, train a model, and see results instantly.
+                    </Text>
+                    <Space wrap>
+                        {demoDatasets.map(d => (
+                            <Button
+                                key={d.id}
+                                onClick={() => handleLoadDemo(d.id)}
+                                loading={demoLoading}
+                                disabled={demoLoading}
+                            >
+                                {d.name}
+                                <Tag color="blue" style={{ marginLeft: 8, fontSize: 10 }}>{d.nodes} nodes</Tag>
+                            </Button>
+                        ))}
+                    </Space>
+                    {demoStatus && (
+                        <Alert type="info" showIcon message={demoStatus} style={{ marginTop: 12 }} />
+                    )}
+                </Card>
             </div>
         );
     }
@@ -321,36 +384,28 @@ export default function EvaluatePage() {
                     </Card>
                 )}
 
-                {/* Prediction Results Table */}
+                {/* Quick Demo: Load & Train */}
                 <Divider />
-                <Card
-                    title="Per-Instance Prediction Results"
-                    extra={
-                        <Select
-                            value={predDatasetId}
-                            onChange={setPredDatasetId}
-                            style={{ minWidth: 260 }}
-                            options={MOCK_GRAPH_DATASETS.map(d => ({
-                                value: d.id,
-                                label: (
-                                    <Space>
-                                        {d.name}
-                                        <Tag color={d.taskLevel === 'node' ? 'cyan' : 'geekblue'} style={{ fontSize: 11 }}>
-                                            {d.taskLevel}-level
-                                        </Tag>
-                                    </Space>
-                                ),
-                            }))}
-                        />
-                    }
-                >
-                    <Tag color="blue" style={{ marginBottom: 12 }}>
-                        {MOCK_GRAPH_DATASETS.find(d => d.id === predDatasetId)?.description}
-                    </Tag>
-                    {(() => {
-                        const ds = MOCK_GRAPH_DATASETS.find(d => d.id === predDatasetId);
-                        return ds ? <PredictionTable dataset={ds} /> : null;
-                    })()}
+                <Card title="Quick Demo: Load & Train a Demo Dataset">
+                    <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                        Load a built-in demo dataset, train a model, and see results instantly.
+                    </Text>
+                    <Space wrap>
+                        {demoDatasets.map(d => (
+                            <Button
+                                key={d.id}
+                                onClick={() => handleLoadDemo(d.id)}
+                                loading={demoLoading}
+                                disabled={demoLoading}
+                            >
+                                {d.name}
+                                <Tag color="blue" style={{ marginLeft: 8, fontSize: 10 }}>{d.nodes} nodes</Tag>
+                            </Button>
+                        ))}
+                    </Space>
+                    {demoStatus && (
+                        <Alert type="info" showIcon message={demoStatus} style={{ marginTop: 12 }} />
+                    )}
                 </Card>
             </Space>
         </div>

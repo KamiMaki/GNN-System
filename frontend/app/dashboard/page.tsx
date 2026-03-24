@@ -120,17 +120,30 @@ export default function DashboardPage() {
         }
     };
 
+    const [editTags, setEditTags] = useState<string[]>([]);
+    const [editTagInput, setEditTagInput] = useState('');
+
     const handleEditOpen = (e: React.MouseEvent, project: ProjectSummary) => {
         e.stopPropagation();
         setEditProject(project);
         setEditName(project.name);
+        setEditTags(project.tags || []);
+        setEditTagInput('');
+    };
+
+    const handleEditTagAdd = () => {
+        const tag = editTagInput.trim();
+        if (tag && !editTags.includes(tag)) {
+            setEditTags([...editTags, tag]);
+        }
+        setEditTagInput('');
     };
 
     const handleSaveEdit = async () => {
         if (!editProject || !editName.trim()) return;
         setSaving(true);
         try {
-            await updateProject(editProject.project_id, { name: editName.trim() });
+            await updateProject(editProject.project_id, { name: editName.trim(), tags: editTags });
             refreshProjects();
             setEditProject(null);
         } catch (err) {
@@ -432,21 +445,44 @@ export default function DashboardPage() {
 
             {/* Edit Project Modal */}
             <Modal
-                title="Rename Project"
+                title="Edit Project"
                 open={!!editProject}
                 onCancel={() => setEditProject(null)}
                 onOk={handleSaveEdit}
                 okText={saving ? 'Saving...' : 'Save'}
                 okButtonProps={{ disabled: !editName.trim() || saving, loading: saving }}
             >
-                <Input
-                    placeholder="Project Name"
-                    value={editName}
-                    onChange={e => setEditName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSaveEdit(); }}
-                    autoFocus
-                    style={{ marginTop: 16 }}
-                />
+                <Space direction="vertical" size="middle" style={{ width: '100%', marginTop: 16 }}>
+                    <div>
+                        <Text type="secondary" style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, display: 'block' }}>
+                            Project Name
+                        </Text>
+                        <Input
+                            placeholder="Project Name"
+                            value={editName}
+                            onChange={e => setEditName(e.target.value)}
+                            autoFocus
+                        />
+                    </div>
+                    <div>
+                        <Text type="secondary" style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, display: 'block' }}>
+                            Tags
+                        </Text>
+                        <Input
+                            placeholder="Add tags (press Enter)"
+                            value={editTagInput}
+                            onChange={e => setEditTagInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleEditTagAdd(); } }}
+                        />
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+                            {editTags.map(tag => (
+                                <Tag key={tag} closable onClose={() => setEditTags(editTags.filter(t => t !== tag))} color="blue">
+                                    {tag}
+                                </Tag>
+                            ))}
+                        </div>
+                    </div>
+                </Space>
             </Modal>
             </PageTransition>
         </div>

@@ -877,6 +877,126 @@ async def explore_project_data(project_id: str):
     return stats
 
 
+@router.get("/{project_id}/graph-sample")
+async def get_graph_sample(
+    project_id: str,
+    limit: int = Query(default=50, ge=5, le=200),
+):
+    """Return a sample of the project's actual graph data for preview."""
+    import pandas as pd
+
+    project = _project_or_404(project_id)
+    ds = _dataset_for_project(project)
+    nodes_df = ds["nodes_df_train"]
+    edges_df = ds["edges_df_train"]
+
+    # Build lookup sets with original values for efficient filtering
+    sample_size = min(limit, len(nodes_df))
+    all_node_ids = set(nodes_df["node_id"].values)
+
+    # Build adjacency from edges for BFS
+    from collections import defaultdict
+    adj = defaultdict(set)
+    for _, row in edges_df.iterrows():
+        s, d = row["src_id"], row["dst_id"]
+        if s in all_node_ids and d in all_node_ids:
+            adj[s].add(d)
+            adj[d].add(s)
+
+    # Start from a random seed node and expand via BFS
+    seed = nodes_df.sample(n=1, random_state=42)["node_id"].values[0]
+    sampled_ids = {seed}
+    frontier = {seed}
+
+    while len(sampled_ids) < sample_size and frontier:
+        new_nodes = set()
+        for nid in frontier:
+            for neighbor in adj.get(nid, set()):
+                if neighbor not in sampled_ids:
+                    new_nodes.add(neighbor)
+        if not new_nodes:
+            remaining = all_node_ids - sampled_ids
+            if remaining:
+                import random as _random
+                rng = _random.Random(42)
+                pick = rng.sample(list(remaining), min(5, len(remaining)))
+                new_nodes = set(pick)
+            else:
+                break
+        frontier = set()
+        for nid in new_nodes:
+            if len(sampled_ids) >= sample_size:
+                break
+            sampled_ids.add(nid)
+            frontier.add(nid)
+
+    sampled = nodes_df[nodes_df["node_id"].isin(sampled_ids)]
+
+    # Get edges between sampled nodes
+    sampled_edges = edges_df[
+        edges_df["src_id"].isin(sampled_ids) & edges_df["dst_id"].isin(sampled_ids)
+    ]
+
+    def _normalize_id(v):
+        """Convert numeric IDs consistently (2.0 -> '2', 2 -> '2')."""
+        try:
+            f = float(v)
+            if f == int(f):
+                return str(int(f))
+        except (ValueError, TypeError):
+            pass
+        return str(v)
+
+    # Build node list
+    exclude_cols = {"node_id", "id", "index"}
+    attr_cols = [c for c in nodes_df.columns if c not in exclude_cols]
+    nodes_out = []
+    for _, row in sampled.iterrows():
+        attrs = {}
+        for c in attr_cols:
+            v = row[c]
+            if pd.isna(v):
+                attrs[c] = None
+            elif isinstance(v, (int, float, np.integer, np.floating)):
+                attrs[c] = round(float(v), 4) if isinstance(v, (float, np.floating)) else int(v)
+            else:
+                attrs[c] = str(v)
+        nid = _normalize_id(row["node_id"])
+        nodes_out.append({
+            "id": nid,
+            "label": f"node_{nid}",
+            "attributes": attrs,
+        })
+
+    # Build edge list
+    edge_exclude = {"src_id", "dst_id", "id", "index"}
+    edge_attr_cols = [c for c in edges_df.columns if c not in edge_exclude]
+    edges_out = []
+    for _, row in sampled_edges.iterrows():
+        attrs = {}
+        for c in edge_attr_cols:
+            v = row[c]
+            if pd.isna(v):
+                attrs[c] = None
+            elif isinstance(v, (int, float, np.integer, np.floating)):
+                attrs[c] = round(float(v), 4) if isinstance(v, (float, np.floating)) else int(v)
+            else:
+                attrs[c] = str(v)
+        edges_out.append({
+            "source": _normalize_id(row["src_id"]),
+            "target": _normalize_id(row["dst_id"]),
+            "attributes": attrs,
+        })
+
+    return {
+        "nodes": nodes_out,
+        "edges": edges_out,
+        "num_nodes_total": len(nodes_df),
+        "num_edges_total": len(edges_df),
+        "sample_size": sample_size,
+    }
+
+
 @router.get("/{project_id}/columns/{column_name}")
 async def analyze_column(
     project_id: str,

@@ -382,6 +382,37 @@ export const confirmData = async (
   return res.json();
 };
 
+// ── Graph Sample (for preview) ──
+
+export interface GraphSampleNode {
+  id: string;
+  label: string;
+  attributes: Record<string, number | string | null>;
+}
+
+export interface GraphSampleEdge {
+  source: string;
+  target: string;
+  attributes: Record<string, number | string | null>;
+}
+
+export interface GraphSampleData {
+  nodes: GraphSampleNode[];
+  edges: GraphSampleEdge[];
+  num_nodes_total: number;
+  num_edges_total: number;
+  sample_size: number;
+}
+
+export const getProjectGraphSample = async (
+  projectId: string,
+  limit: number = 50,
+): Promise<GraphSampleData> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/graph-sample?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to get graph sample');
+  return res.json();
+};
+
 export const estimateTraining = async (
   projectId: string,
   nTrials: number,
