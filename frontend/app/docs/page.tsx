@@ -31,13 +31,13 @@ export default function DocumentationPage() {
                 <div style={{ textAlign: 'center', marginBottom: 48 }}>
                     <Title level={2}>Documentation</Title>
                     <Paragraph type="secondary" style={{ maxWidth: 800, margin: '0 auto' }}>
-                        Comprehensive guides on LayoutXpert&apos;s GNN architecture, API endpoints, and integration workflows for physical design automation.
+                        Comprehensive guides on GraphX&apos;s GNN architecture, API endpoints, and integration workflows for physical design automation.
                     </Paragraph>
                 </div>
 
                 <Section title="Getting Started" icon={<ReadOutlined />}>
                     <Paragraph>
-                        LayoutXpert.AI bridges the gap between EDA physical design and geometric deep learning.
+                        GraphX.AI bridges the gap between EDA physical design and geometric deep learning.
                         To begin, ensure you have your design data formatted in standard <strong>LEF/DEF</strong> or parsed graph formats (PyTorch Geometric compatible).
                     </Paragraph>
 

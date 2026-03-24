@@ -8,6 +8,7 @@ import {
 import {
     PlusOutlined, SearchOutlined, DeleteOutlined, EditOutlined,
     ExperimentOutlined, RocketOutlined, CheckCircleOutlined,
+    ThunderboltOutlined,
 } from '@ant-design/icons';
 
 import { useProject } from '@/contexts/ProjectContext';
@@ -43,7 +44,6 @@ const STATUS_TAG_COLOR: Record<string, string> = {
 
 function getStepPath(project: ProjectSummary): string {
     const id = project.project_id;
-    // Always go to project overview page
     return `/projects/${id}`;
 }
 
@@ -149,12 +149,11 @@ export default function DashboardPage() {
 
             <PageTransition>
             {/* Hero / Welcome Banner */}
-            <div style={{
-                background: `linear-gradient(135deg, ${token.colorPrimary}12 0%, ${token.colorPrimary}06 50%, transparent 100%)`,
+            <div className="hero-gradient" style={{
                 borderBottom: `1px solid ${token.colorBorderSecondary}`,
-                padding: '32px 24px',
+                padding: '36px 24px',
             }}>
-                <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+                <div style={{ maxWidth: 1200, margin: '0 auto', position: 'relative', zIndex: 1 }}>
                     <Row gutter={24} align="middle">
                         <Col flex="auto">
                             <Title level={3} style={{ margin: 0 }}>
@@ -166,20 +165,47 @@ export default function DashboardPage() {
                         </Col>
                         <Col>
                             <Space size="large">
-                                <div style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: 24, fontWeight: 700, color: token.colorPrimary }}>{projects.length}</div>
+                                <div className="stat-card" style={{
+                                    textAlign: 'center',
+                                    padding: '12px 20px',
+                                    borderRadius: 12,
+                                    background: token.colorBgContainer,
+                                    boxShadow: token.boxShadow,
+                                    minWidth: 80,
+                                }}>
+                                    <div style={{ fontSize: 28, fontWeight: 700, color: token.colorPrimary, lineHeight: 1.2 }}>
+                                        {projects.length}
+                                    </div>
                                     <Text type="secondary" style={{ fontSize: 12 }}>
                                         <ExperimentOutlined style={{ marginRight: 4 }} />Projects
                                     </Text>
                                 </div>
-                                <div style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: 24, fontWeight: 700, color: token.colorSuccess }}>{completedCount}</div>
+                                <div className="stat-card stat-success" style={{
+                                    textAlign: 'center',
+                                    padding: '12px 20px',
+                                    borderRadius: 12,
+                                    background: token.colorBgContainer,
+                                    boxShadow: token.boxShadow,
+                                    minWidth: 80,
+                                }}>
+                                    <div style={{ fontSize: 28, fontWeight: 700, color: token.colorSuccess, lineHeight: 1.2 }}>
+                                        {completedCount}
+                                    </div>
                                     <Text type="secondary" style={{ fontSize: 12 }}>
                                         <CheckCircleOutlined style={{ marginRight: 4 }} />Completed
                                     </Text>
                                 </div>
-                                <div style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: 24, fontWeight: 700, color: token.colorWarning }}>{trainingCount}</div>
+                                <div className="stat-card stat-warning" style={{
+                                    textAlign: 'center',
+                                    padding: '12px 20px',
+                                    borderRadius: 12,
+                                    background: token.colorBgContainer,
+                                    boxShadow: token.boxShadow,
+                                    minWidth: 80,
+                                }}>
+                                    <div style={{ fontSize: 28, fontWeight: 700, color: token.colorWarning, lineHeight: 1.2 }}>
+                                        {trainingCount}
+                                    </div>
                                     <Text type="secondary" style={{ fontSize: 12 }}>
                                         <RocketOutlined style={{ marginRight: 4 }} />Training
                                     </Text>
@@ -198,7 +224,8 @@ export default function DashboardPage() {
                         prefix={<SearchOutlined />}
                         value={search}
                         onChange={e => setSearch(e.target.value)}
-                        style={{ maxWidth: 400, flex: 1 }}
+                        style={{ maxWidth: 400, flex: 1, borderRadius: 10 }}
+                        size="large"
                     />
 
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: 1 }}>
@@ -211,7 +238,7 @@ export default function DashboardPage() {
                             <Tag
                                 key={tag}
                                 color={tagFilter === tag ? 'blue' : undefined}
-                                style={{ cursor: 'pointer' }}
+                                style={{ cursor: 'pointer', borderRadius: 6 }}
                                 onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
                             >
                                 {tag}
@@ -223,6 +250,14 @@ export default function DashboardPage() {
                         type="primary"
                         icon={<PlusOutlined />}
                         onClick={() => setDialogOpen(true)}
+                        size="large"
+                        style={{
+                            borderRadius: 10,
+                            fontWeight: 600,
+                            background: `linear-gradient(135deg, ${token.colorPrimary}, #06b6d4)`,
+                            border: 'none',
+                            boxShadow: '0 2px 8px rgba(8, 145, 178, 0.3)',
+                        }}
                     >
                         New Project
                     </Button>
@@ -233,9 +268,7 @@ export default function DashboardPage() {
                     <Row gutter={[24, 24]}>
                         {[1, 2, 3].map(i => (
                             <Col xs={24} sm={12} md={8} key={i}>
-                                <Card>
-                                    <Skeleton active paragraph={{ rows: 3 }} />
-                                </Card>
+                                <Card><Skeleton active paragraph={{ rows: 3 }} /></Card>
                             </Col>
                         ))}
                     </Row>
@@ -263,77 +296,100 @@ export default function DashboardPage() {
                     </Empty>
                 ) : (
                     <Row gutter={[24, 24]}>
-                        {filtered.map((project) => (
-                            <Col xs={24} sm={12} md={8} key={project.project_id}>
-                                <Card
-                                    hoverable
-                                    onClick={() => router.push(getStepPath(project))}
-                                    styles={{
-                                        body: { padding: 20 },
-                                    }}
-                                    style={{
-                                        borderTop: `3px solid ${STATUS_TAG_COLOR[project.status] === 'green' ? token.colorSuccess : STATUS_TAG_COLOR[project.status] === 'processing' ? token.colorWarning : token.colorPrimary}`,
-                                    }}
-                                    extra={
-                                        <Space size={4}>
-                                            <Button
-                                                type="text"
-                                                size="small"
-                                                icon={<EditOutlined />}
-                                                onClick={(e) => handleEditOpen(e, project)}
-                                            />
-                                            <Button
-                                                type="text"
-                                                danger
-                                                size="small"
-                                                icon={<DeleteOutlined />}
-                                                onClick={(e) => handleDelete(e, project.project_id)}
-                                            />
-                                        </Space>
-                                    }
-                                    title={<Text strong ellipsis style={{ maxWidth: 200 }}>{project.name}</Text>}
-                                >
-                                    {/* Tags */}
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12, minHeight: 24 }}>
-                                        {project.tags?.slice(0, 3).map(tag => (
-                                            <Tag key={tag}>{tag}</Tag>
-                                        ))}
-                                    </div>
+                        {filtered.map((project) => {
+                            const statusColor = project.status === 'completed' ? token.colorSuccess
+                                : project.status === 'training' ? token.colorWarning
+                                : token.colorPrimary;
 
-                                    {/* Status & Date */}
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                                        <Tag color={STATUS_TAG_COLOR[project.status] || 'default'}>
-                                            {project.status.replace('_', ' ').toUpperCase()}
-                                        </Tag>
-                                        <Text type="secondary" style={{ fontSize: 12 }}>
-                                            {timeAgo(project.updated_at || project.created_at)}
-                                        </Text>
-                                    </div>
+                            return (
+                                <Col xs={24} sm={12} md={8} key={project.project_id}>
+                                    <Card
+                                        hoverable
+                                        className="card-hover-lift"
+                                        onClick={() => router.push(getStepPath(project))}
+                                        styles={{ body: { padding: 20 } }}
+                                        style={{
+                                            borderTop: `3px solid ${statusColor}`,
+                                            overflow: 'hidden',
+                                        }}
+                                        extra={
+                                            <Space size={4}>
+                                                <Button
+                                                    type="text"
+                                                    size="small"
+                                                    icon={<EditOutlined />}
+                                                    onClick={(e) => handleEditOpen(e, project)}
+                                                />
+                                                <Button
+                                                    type="text"
+                                                    danger
+                                                    size="small"
+                                                    icon={<DeleteOutlined />}
+                                                    onClick={(e) => handleDelete(e, project.project_id)}
+                                                />
+                                            </Space>
+                                        }
+                                        title={<Text strong ellipsis style={{ maxWidth: 200 }}>{project.name}</Text>}
+                                    >
+                                        {/* Tags */}
+                                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12, minHeight: 24 }}>
+                                            {project.tags?.slice(0, 3).map(tag => (
+                                                <Tag key={tag} style={{ borderRadius: 6 }}>{tag}</Tag>
+                                            ))}
+                                        </div>
 
-                                    {/* Step progress */}
-                                    <div style={{ display: 'flex', gap: 4 }}>
-                                        {STEP_LABELS.map((label, i) => (
-                                            <div key={label} style={{ flex: 1, textAlign: 'center' }}>
-                                                <div style={{
-                                                    height: 3, borderRadius: 2, marginBottom: 4,
-                                                    background: i < project.current_step
-                                                        ? `linear-gradient(90deg, ${token.colorPrimary}, ${token.colorPrimaryBg})`
-                                                        : token.colorFillSecondary,
-                                                }} />
-                                                <Text type="secondary" style={{ fontSize: 10 }}>{label}</Text>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </Card>
-                            </Col>
-                        ))}
+                                        {/* Status & Date */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                            <Tag color={STATUS_TAG_COLOR[project.status] || 'default'}>
+                                                {project.status.replace('_', ' ').toUpperCase()}
+                                            </Tag>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                {timeAgo(project.updated_at || project.created_at)}
+                                            </Text>
+                                        </div>
+
+                                        {/* Step progress */}
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                            {STEP_LABELS.map((label, i) => {
+                                                const isActive = i < project.current_step;
+                                                return (
+                                                    <div key={label} style={{ flex: 1, textAlign: 'center' }}>
+                                                        <div style={{
+                                                            height: 4,
+                                                            borderRadius: 2,
+                                                            marginBottom: 4,
+                                                            background: isActive
+                                                                ? `linear-gradient(90deg, ${token.colorPrimary}, ${token.colorInfo})`
+                                                                : token.colorFillSecondary,
+                                                            transition: 'background 0.3s ease',
+                                                        }} />
+                                                        <Text type="secondary" style={{
+                                                            fontSize: 10,
+                                                            fontWeight: isActive ? 600 : 400,
+                                                            color: isActive ? token.colorPrimary : undefined,
+                                                        }}>
+                                                            {label}
+                                                        </Text>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </Card>
+                                </Col>
+                            );
+                        })}
                     </Row>
                 )}
             </div>
 
             {/* Create Project Modal */}
             <Modal
-                title="Create New Project"
+                title={
+                    <Space>
+                        <ThunderboltOutlined style={{ color: token.colorPrimary }} />
+                        <span>Create New Project</span>
+                    </Space>
+                }
                 open={dialogOpen}
                 onCancel={() => setDialogOpen(false)}
                 onOk={handleCreate}
@@ -341,15 +397,24 @@ export default function DashboardPage() {
                 okButtonProps={{ disabled: !newName.trim() || creating, loading: creating }}
             >
                 <Space direction="vertical" size="middle" style={{ width: '100%', marginTop: 16 }}>
-                    <Input
-                        placeholder="Project Name"
-                        value={newName}
-                        onChange={e => setNewName(e.target.value)}
-                        autoFocus
-                    />
                     <div>
+                        <Text type="secondary" style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, display: 'block' }}>
+                            Project Name
+                        </Text>
                         <Input
-                            placeholder="Add Tags (press Enter)"
+                            placeholder="e.g., SRAM Cell Classification"
+                            value={newName}
+                            onChange={e => setNewName(e.target.value)}
+                            autoFocus
+                            size="large"
+                        />
+                    </div>
+                    <div>
+                        <Text type="secondary" style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, display: 'block' }}>
+                            Tags
+                        </Text>
+                        <Input
+                            placeholder="Add tags (press Enter)"
                             value={tagInput}
                             onChange={e => setTagInput(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleTagAdd(); } }}

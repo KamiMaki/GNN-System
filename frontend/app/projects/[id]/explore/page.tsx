@@ -6,7 +6,7 @@ import {
     Button, Card, Tag, Select, Checkbox, Alert, Spin, Segmented, Space, Table, Typography, AutoComplete, Row, Col, Statistic, theme,
 } from 'antd';
 import {
-    CheckCircleOutlined, WarningOutlined, ArrowRightOutlined,
+    CheckCircleOutlined, WarningOutlined, ArrowRightOutlined, ExperimentOutlined,
 } from '@ant-design/icons';
 
 import {
@@ -18,6 +18,8 @@ import {
     GenericExploreData, ColumnInfo, ColumnStats, NumericColumnStats, CategoricalColumnStats,
     LabelValidationResult,
 } from '@/lib/api';
+import { MOCK_GRAPH_DATASETS } from '@/lib/mockGraphData';
+import GraphPreview from '@/components/GraphPreview';
 
 const { Title, Text } = Typography;
 
@@ -56,6 +58,8 @@ export default function ExplorePage() {
 
     const [confirming, setConfirming] = useState(false);
     const [confirmError, setConfirmError] = useState<string | null>(null);
+
+    const [previewDatasetId, setPreviewDatasetId] = useState<string>(MOCK_GRAPH_DATASETS[0]?.id || '');
 
     useEffect(() => {
         if (!projectId) return;
@@ -200,16 +204,16 @@ export default function ExplorePage() {
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
-            <div style={{
+            <div className="page-header" style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 24,
-                paddingBottom: 16,
-                borderBottom: `1px solid ${token.colorBorderSecondary}`,
             }}>
                 <div>
-                    <Title level={3} style={{ margin: 0 }}>Data Analysis</Title>
+                    <Title level={3} style={{ margin: 0 }}>
+                        <ExperimentOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
+                        Data Analysis
+                    </Title>
                     <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                         Explore your data, handle missing values, and configure the learning task.
                     </Text>
@@ -289,6 +293,37 @@ export default function ExplorePage() {
                             </div>
                         </div>
                     )}
+                </Card>
+
+                {/* SECTION: INTERACTIVE GRAPH PREVIEW */}
+                <Card
+                    title="Interactive Graph Preview"
+                    extra={
+                        <Select
+                            value={previewDatasetId}
+                            onChange={setPreviewDatasetId}
+                            style={{ minWidth: 260 }}
+                            options={MOCK_GRAPH_DATASETS.map(d => ({
+                                value: d.id,
+                                label: (
+                                    <Space>
+                                        {d.name}
+                                        <Tag color={d.isMultiGraph ? 'geekblue' : 'cyan'} style={{ fontSize: 11 }}>
+                                            {d.isMultiGraph ? 'multi-graph' : 'single-graph'}
+                                        </Tag>
+                                    </Space>
+                                ),
+                            }))}
+                        />
+                    }
+                >
+                    <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                        {MOCK_GRAPH_DATASETS.find(d => d.id === previewDatasetId)?.description}
+                    </Text>
+                    {(() => {
+                        const ds = MOCK_GRAPH_DATASETS.find(d => d.id === previewDatasetId);
+                        return ds ? <GraphPreview dataset={ds} /> : null;
+                    })()}
                 </Card>
 
                 {/* SECTION II: NODE ANALYSIS */}

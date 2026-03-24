@@ -3,8 +3,9 @@ import ClientProviders from "@/components/ClientProviders";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LayoutXpert.AI",
-  description: "A platform for automated GNN training and explanation for layout data.",
+  title: "GraphX.AI",
+  description: "A platform for automated GNN training and graph intelligence.",
+  icons: { icon: '/graphx-icon.svg' },
 };
 
 export default function RootLayout({

@@ -1,4 +1,4 @@
-# LayoutXpert 系統功能清單
+# GraphX.AI 系統功能清單
 
 > **Purpose**: 供 PM 與 DevOps 了解目前系統支援的功能，作為後續改進與需求規劃的基礎。
 > **Date**: 2026-03-11
@@ -24,7 +24,7 @@
 
 ## 系統概述
 
-LayoutXpert 是一個用於 **IC 佈局圖資料** 的自動化 GNN（Graph Neural Network）訓練與分析平台。使用者可以上傳電路佈局的 graph 資料，透過引導式 4 步驟流程完成資料分析、模型訓練及評估。
+GraphX.AI 是一個用於 **IC 佈局圖資料** 的自動化 GNN（Graph Neural Network）訓練與分析平台。使用者可以上傳電路佈局的 graph 資料，透過引導式 4 步驟流程完成資料分析、模型訓練及評估。
 
 **核心工作流程**：
 ```

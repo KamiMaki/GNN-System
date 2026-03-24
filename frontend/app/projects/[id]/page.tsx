@@ -223,11 +223,10 @@ export default function ProjectOverviewPage() {
         <PageTransition>
             <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
                 {/* Project title section */}
-                <div style={{
+                <div className="page-header" style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    marginBottom: 24,
                 }}>
                     <div>
                         <Title level={3} style={{ margin: 0 }}>{project.name}</Title>

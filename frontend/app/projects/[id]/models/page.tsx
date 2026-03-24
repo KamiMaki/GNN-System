@@ -170,13 +170,10 @@ export default function ModelsPage() {
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
             {/* Header */}
-            <div style={{
+            <div className="page-header" style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 24,
-                paddingBottom: 16,
-                borderBottom: `1px solid ${token.colorBorderSecondary}`,
             }}>
                 <div>
                     <Title level={3} style={{ margin: 0 }}>
@@ -229,9 +226,9 @@ export default function ModelsPage() {
                             <Card
                                 key={model.model_id}
                                 hoverable
+                                className="card-hover-lift"
                                 style={{
                                     borderLeft: `4px solid ${token.colorPrimary}`,
-                                    transition: 'box-shadow 0.3s ease',
                                 }}
                                 styles={{ body: { padding: '20px 24px' } }}
                             >

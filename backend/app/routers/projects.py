@@ -975,7 +975,13 @@ async def estimate_training_time(
     project = _project_or_404(project_id)
     ds = _dataset_for_project(project)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    has_cuda = torch.cuda.is_available()
+    if has_cuda:
+        cuda_ver = torch.version.cuda or "unknown"
+        gpu_name = torch.cuda.get_device_name(0)
+        device = f"cuda ({gpu_name}, CUDA {cuda_ver})"
+    else:
+        device = "cpu"
     num_nodes = ds["num_nodes"]
 
     # Check historical data
@@ -992,8 +998,8 @@ async def estimate_training_time(
             estimated = avg_rate * n_trials * (num_nodes / 1000)
             return TrainingEstimate(estimated_seconds=round(estimated, 1), device=device)
 
-    # Cold start rough estimate (A100 assumption)
-    if device == "cuda":
+    # Cold start rough estimate
+    if has_cuda:
         seconds_per_trial = 2.0 + num_nodes / 10000 * 1.5
     else:
         seconds_per_trial = 8.0 + num_nodes / 10000 * 6.0

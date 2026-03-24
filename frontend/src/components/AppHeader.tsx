@@ -5,7 +5,7 @@ import {
     Button, Avatar, Dropdown, Breadcrumb, Steps, Divider, Tag, Typography, theme, Grid, Drawer, Space,
 } from 'antd';
 import {
-    AppstoreOutlined, UserOutlined, SettingOutlined, LogoutOutlined,
+    UserOutlined, SettingOutlined, LogoutOutlined,
     SunOutlined, MoonOutlined, MenuOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -56,15 +56,11 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
 
     const isProjectMode = !!(projectId && projectName);
     const activeIndex = isProjectMode ? (projectStep ?? 1) - 1 : -1;
-    // maxReachableIndex: steps that the user has reached (0-indexed).
-    // projectStep is 1-indexed; step N means indices 0..N-1 are reachable.
-    // When completed (step 4), also unlock step 5 (Models).
     const baseMaxIndex = isProjectMode ? (projectStep ?? 1) - 1 : -1;
     const maxReachableIndex = (projectStatus === 'completed' && baseMaxIndex >= 3) ? 4 : baseMaxIndex;
 
     const handleStepClick = (index: number) => {
         if (!projectId) return;
-        // Only allow navigation to steps the user has reached
         if (index > maxReachableIndex) return;
         router.push(STEP_PATHS(projectId)[index]);
     };
@@ -93,14 +89,14 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
     } : { items: [] };
 
     const logoSection = (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <img src="/graphx-icon.svg" alt="GraphX.AI" style={{ width: 32, height: 32, borderRadius: 8 }} />
             <Button
                 type="text"
-                icon={<AppstoreOutlined />}
                 onClick={() => router.push('/dashboard')}
-                style={{ fontWeight: 800, fontSize: '1rem', padding: '4px 8px' }}
+                style={{ fontWeight: 800, fontSize: '1rem', padding: '4px 4px' }}
             >
-                LayoutXpert
+                <span className="gradient-text">GraphX</span>
             </Button>
         </div>
     );
@@ -111,7 +107,12 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
                 type="text"
                 icon={mode === 'light' ? <MoonOutlined /> : <SunOutlined />}
                 onClick={toggleColorMode}
-                style={{ fontSize: 16 }}
+                style={{
+                    fontSize: 16,
+                    borderRadius: 8,
+                    width: 36,
+                    height: 36,
+                }}
                 title={mode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
             />
             {user && (
@@ -122,8 +123,12 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
                         <Avatar
                             src={user.avatar}
                             alt={user.name}
-                            size={32}
-                            style={{ cursor: 'pointer' }}
+                            size={34}
+                            style={{
+                                cursor: 'pointer',
+                                border: `2px solid ${token.colorPrimary}30`,
+                                transition: 'border-color 0.2s',
+                            }}
                             icon={<UserOutlined />}
                         />
                     </Dropdown>
@@ -155,7 +160,7 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
         </div>
     ) : subtitle ? (
         <div style={{ flex: 1 }}>
-            <Text type="secondary">{subtitle}</Text>
+            <Text type="secondary" style={{ letterSpacing: 1, fontSize: 12, fontWeight: 500 }}>{subtitle}</Text>
         </div>
     ) : (
         <div style={{ flex: 1 }} />
@@ -164,12 +169,14 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
     if (isMobile) {
         return (
             <>
-                <div style={{
+                <div className="glass-header" style={{
                     padding: '12px 16px',
-                    borderBottom: `1px solid ${token.colorBorderSecondary}`,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 100,
                 }}>
                     {logoSection}
                     <div style={{ flex: 1 }} />
@@ -228,12 +235,14 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
     }
 
     return (
-        <div style={{
-            padding: '12px 24px',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        <div className="glass-header" style={{
+            padding: '10px 24px',
             display: 'flex',
             alignItems: 'center',
             gap: 16,
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
         }}>
             {logoSection}
             <Divider type="vertical" style={{ height: 28 }} />
