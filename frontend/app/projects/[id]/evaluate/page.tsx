@@ -1,21 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme, Button, Divider, Select } from 'antd';
-import { TrophyOutlined, RocketOutlined, ArrowRightOutlined } from '@ant-design/icons';
+import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme, Button, Input, Select } from 'antd';
+import { TrophyOutlined, RocketOutlined, ArrowRightOutlined, CheckCircleOutlined, CloseCircleOutlined, SearchOutlined } from '@ant-design/icons';
 
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-    BarChart, Bar,
     ScatterChart, Scatter,
 } from 'recharts';
 
-import {
-    getProjectReport, getExperimentReport, Report, SplitMetrics,
-    loadDemoData, startProjectTraining, getProjectStatus, listDemoDatasets, confirmData,
-    DemoDatasetInfo,
-} from '@/lib/api';
+import { getProjectReport, getExperimentReport, Report, SplitMetrics, NodePrediction } from '@/lib/api';
 
 const { Title, Text } = Typography;
 
@@ -70,9 +65,8 @@ export default function EvaluatePage() {
     const [report, setReport] = useState<Report | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [demoDatasets, setDemoDatasets] = useState<DemoDatasetInfo[]>([]);
-    const [demoLoading, setDemoLoading] = useState(false);
-    const [demoStatus, setDemoStatus] = useState<string | null>(null);
+    const [predFilter, setPredFilter] = useState<string>('all');
+    const [predSearch, setPredSearch] = useState('');
 
     useEffect(() => {
         if (!projectId) return;
@@ -84,45 +78,7 @@ export default function EvaluatePage() {
             .then(setReport)
             .catch(err => setError(err.message))
             .finally(() => setLoading(false));
-        listDemoDatasets().then(setDemoDatasets).catch(console.error);
     }, [projectId, taskIdParam]);
-
-    const handleLoadDemo = async (demoId: string) => {
-        setDemoLoading(true);
-        setDemoStatus(null);
-        try {
-            setDemoStatus('Loading demo data...');
-            await loadDemoData(projectId, demoId);
-            setDemoStatus('Confirming data...');
-            await confirmData(projectId, 'node_classification', 'is_critical');
-            setDemoStatus('Starting training (10 trials)...');
-            await startProjectTraining(projectId, [], 10);
-            // Poll until done
-            const poll = async (): Promise<void> => {
-                const status = await getProjectStatus(projectId);
-                if (status.status === 'COMPLETED') {
-                    setDemoStatus('Training complete! Loading results...');
-                    const rpt = await getProjectReport(projectId);
-                    setReport(rpt);
-                    setError(null);
-                    setDemoStatus(null);
-                } else if (status.status === 'FAILED') {
-                    setDemoStatus(null);
-                    setError('Demo training failed.');
-                } else {
-                    setDemoStatus(`Training... ${status.progress}%`);
-                    await new Promise(r => setTimeout(r, 2000));
-                    return poll();
-                }
-            };
-            await poll();
-        } catch (err: any) {
-            setError(err.message || 'Failed to load demo data');
-            setDemoStatus(null);
-        } finally {
-            setDemoLoading(false);
-        }
-    };
 
     if (loading) {
         return (
@@ -135,28 +91,7 @@ export default function EvaluatePage() {
     if (error || !report) {
         return (
             <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
-                <Alert type="warning" showIcon message={error || 'No training results yet. Load a demo dataset to get started.'} style={{ marginBottom: 24 }} />
-                <Card title="Quick Demo: Load & Train a Demo Dataset">
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-                        Load a built-in demo dataset, train a model, and see results instantly.
-                    </Text>
-                    <Space wrap>
-                        {demoDatasets.map(d => (
-                            <Button
-                                key={d.id}
-                                onClick={() => handleLoadDemo(d.id)}
-                                loading={demoLoading}
-                                disabled={demoLoading}
-                            >
-                                {d.name}
-                                <Tag color="blue" style={{ marginLeft: 8, fontSize: 10 }}>{d.nodes} nodes</Tag>
-                            </Button>
-                        ))}
-                    </Space>
-                    {demoStatus && (
-                        <Alert type="info" showIcon message={demoStatus} style={{ marginTop: 12 }} />
-                    )}
-                </Card>
+                <Alert type="warning" showIcon message={error || 'No training results yet. Please train a model first.'} />
             </div>
         );
     }
@@ -194,7 +129,7 @@ export default function EvaluatePage() {
         { title: 'Val Loss', dataIndex: 'val_loss', key: 'val_loss', render: (v: number) => v.toFixed(4) },
     ];
 
-    const leaderboardData = (report.leaderboard || []).map((entry, i) => ({
+    const leaderboardData = (report.leaderboard || []).map((entry) => ({
         key: `${entry.trial}`,
         trial: entry.trial,
         model: entry.model,
@@ -204,6 +139,39 @@ export default function EvaluatePage() {
         lr: entry.lr,
         val_loss: entry.val_loss,
     }));
+
+    // Per-node prediction table
+    const nodePredictions = report.node_predictions || [];
+    const filteredPredictions = nodePredictions.filter(p => {
+        if (predFilter === 'correct' && p.correct !== true) return false;
+        if (predFilter === 'incorrect' && p.correct !== false) return false;
+        if (predSearch && !p.node_id.toLowerCase().includes(predSearch.toLowerCase())) return false;
+        return true;
+    });
+
+    const correctCount = nodePredictions.filter(p => p.correct === true).length;
+    const incorrectCount = nodePredictions.filter(p => p.correct === false).length;
+
+    const predColumns = [
+        {
+            title: 'Node ID', dataIndex: 'node_id', key: 'node_id',
+            sorter: (a: NodePrediction, b: NodePrediction) => a.node_id.localeCompare(b.node_id, undefined, { numeric: true }),
+        },
+        { title: 'True Label', dataIndex: 'true_label', key: 'true_label' },
+        { title: 'Predicted', dataIndex: 'predicted_label', key: 'predicted_label' },
+        ...(isClassification ? [{
+            title: 'Correct', dataIndex: 'correct', key: 'correct',
+            render: (v: boolean) => v
+                ? <Tag color="success" icon={<CheckCircleOutlined />}>Yes</Tag>
+                : <Tag color="error" icon={<CloseCircleOutlined />}>No</Tag>,
+            sorter: (a: NodePrediction, b: NodePrediction) => (a.correct === b.correct ? 0 : a.correct ? -1 : 1),
+        }] : []),
+        ...(nodePredictions.some(p => p.confidence != null) ? [{
+            title: 'Confidence', dataIndex: 'confidence', key: 'confidence',
+            render: (v: number | undefined) => v != null ? `${(v * 100).toFixed(1)}%` : '—',
+            sorter: (a: NodePrediction, b: NodePrediction) => (a.confidence || 0) - (b.confidence || 0),
+        }] : []),
+    ];
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
@@ -249,7 +217,7 @@ export default function EvaluatePage() {
                     </Space>
                 </Card>
 
-                {/* Confusion Matrix — dynamic NxN */}
+                {/* Confusion Matrix */}
                 {isClassification && report.confusion_matrix && (
                     <Card title="Confusion Matrix">
                         {(() => {
@@ -265,11 +233,9 @@ export default function EvaluatePage() {
                                         margin: '0 auto',
                                         minWidth: Math.max(500, 160 + n * 100),
                                     }}>
-                                        {/* Predicted label */}
                                         <div style={{ textAlign: 'center', marginBottom: 8, paddingLeft: 160 }}>
                                             <Text type="secondary" style={{ fontSize: 13, fontWeight: 600, letterSpacing: 1 }}>PREDICTED</Text>
                                         </div>
-                                        {/* Header row */}
                                         <div style={{ display: 'grid', gridTemplateColumns: `160px repeat(${n}, minmax(90px, 1fr))`, gap: 6 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
                                                 <Text type="secondary" style={{ fontSize: 12 }}>Actual \ Pred.</Text>
@@ -280,7 +246,6 @@ export default function EvaluatePage() {
                                                 </div>
                                             ))}
                                         </div>
-                                        {/* Data rows */}
                                         {matrix.map((row, i) => (
                                             <div key={i} style={{ display: 'grid', gridTemplateColumns: `160px repeat(${n}, minmax(90px, 1fr))`, gap: 6 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px' }}>
@@ -303,7 +268,6 @@ export default function EvaluatePage() {
                                                             border: isDiag
                                                                 ? `2px solid ${token.colorSuccess}40`
                                                                 : `1px solid ${token.colorBorderSecondary}`,
-                                                            transition: 'transform 0.15s ease',
                                                         }}>
                                                             <div style={{ fontSize: 20, fontWeight: 700, margin: 0, lineHeight: 1.2 }}>{val}</div>
                                                             <Text type="secondary" style={{ fontSize: 11 }}>
@@ -315,13 +279,67 @@ export default function EvaluatePage() {
                                             </div>
                                         ))}
                                     </div>
-                                    {/* Actual label */}
                                     <div style={{ position: 'relative', marginTop: 8 }}>
                                         <Text type="secondary" style={{ fontSize: 13, fontWeight: 600, letterSpacing: 1, paddingLeft: 40 }}>ACTUAL</Text>
                                     </div>
                                 </div>
                             );
                         })()}
+                    </Card>
+                )}
+
+                {/* Per-Node Predictions Table */}
+                {nodePredictions.length > 0 && (
+                    <Card
+                        title={
+                            <Space>
+                                <span>Per-Node Predictions</span>
+                                <Tag color="blue">{nodePredictions.length} nodes</Tag>
+                                {isClassification && (
+                                    <>
+                                        <Tag color="success">{correctCount} correct</Tag>
+                                        <Tag color="error">{incorrectCount} incorrect</Tag>
+                                    </>
+                                )}
+                            </Space>
+                        }
+                        extra={
+                            <Space>
+                                <Input
+                                    placeholder="Search Node ID"
+                                    prefix={<SearchOutlined />}
+                                    value={predSearch}
+                                    onChange={e => setPredSearch(e.target.value)}
+                                    style={{ width: 160 }}
+                                    size="small"
+                                    allowClear
+                                />
+                                {isClassification && (
+                                    <Select
+                                        value={predFilter}
+                                        onChange={setPredFilter}
+                                        size="small"
+                                        style={{ width: 120 }}
+                                        options={[
+                                            { value: 'all', label: 'All' },
+                                            { value: 'correct', label: 'Correct' },
+                                            { value: 'incorrect', label: 'Incorrect' },
+                                        ]}
+                                    />
+                                )}
+                            </Space>
+                        }
+                    >
+                        <Table
+                            columns={predColumns}
+                            dataSource={filteredPredictions.map(p => ({ ...p, key: p.node_id }))}
+                            pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
+                            size="small"
+                            scroll={{ y: 500 }}
+                            rowClassName={(record: any) =>
+                                record.correct === true ? '' : record.correct === false ? 'ant-table-row-selected' : ''
+                            }
+                        />
                     </Card>
                 )}
 
@@ -383,30 +401,6 @@ export default function EvaluatePage() {
                         />
                     </Card>
                 )}
-
-                {/* Quick Demo: Load & Train */}
-                <Divider />
-                <Card title="Quick Demo: Load & Train a Demo Dataset">
-                    <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-                        Load a built-in demo dataset, train a model, and see results instantly.
-                    </Text>
-                    <Space wrap>
-                        {demoDatasets.map(d => (
-                            <Button
-                                key={d.id}
-                                onClick={() => handleLoadDemo(d.id)}
-                                loading={demoLoading}
-                                disabled={demoLoading}
-                            >
-                                {d.name}
-                                <Tag color="blue" style={{ marginLeft: 8, fontSize: 10 }}>{d.nodes} nodes</Tag>
-                            </Button>
-                        ))}
-                    </Space>
-                    {demoStatus && (
-                        <Alert type="info" showIcon message={demoStatus} style={{ marginTop: 12 }} />
-                    )}
-                </Card>
             </Space>
         </div>
     );

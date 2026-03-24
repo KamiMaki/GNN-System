@@ -212,6 +212,20 @@ def run_training_task(task_id: str) -> None:
                 for i in indices
             ]
 
+        # Per-node predictions on test set
+        node_predictions = []
+        test_node_ids = dataset.get("nodes_df_test", None)
+        for i in range(len(test_y_true)):
+            nid = str(test_node_ids["node_id"].iloc[i]) if test_node_ids is not None and len(test_node_ids) > i else str(i)
+            pred_entry = {
+                "node_id": nid,
+                "true_label": round(float(test_y_true[i]), 4) if is_regression else str(int(test_y_true[i])),
+                "predicted_label": round(float(test_preds[i]), 4) if is_regression else str(int(test_preds[i])),
+            }
+            if is_classification:
+                pred_entry["correct"] = bool(test_y_true[i] == test_preds[i])
+            node_predictions.append(pred_entry)
+
         report = {
             "task_type": task_type,
             "train_metrics": train_metrics,
@@ -220,6 +234,7 @@ def run_training_task(task_id: str) -> None:
             "history": progress_cb.history,
             "confusion_matrix": confusion_matrix,
             "residual_data": residual_data,
+            "node_predictions": node_predictions,
             "best_config": {
                 "model_name": best_config["model_name"],
                 "hidden_dim": best_config["hidden_dim"],

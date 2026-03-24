@@ -335,6 +335,30 @@ def main():
     print(f"  Train: {len(tr_n)} nodes, {len(tr_e)} edges | missing cells: {missing_train}")
     print(f"  Test:  {len(te_n)} nodes, {len(te_e)} edges | missing cells: {missing_test}")
 
+    # ====================================================================
+    # 6. demo_small_multigraph — 10 graphs, ~20 nodes each
+    # ====================================================================
+    print("\n" + "=" * 60)
+    print("6. demo_small_multigraph (10 graphs, ~20 nodes each)")
+    print("=" * 60)
+
+    rng_sm = random.Random(SEED + 5)
+    sm_graph_sizes = [18, 20, 22, 19, 21, 20, 23, 17, 20, 22]  # ~202 total
+    sm_graph_names = [f"graph_{i+1:02d}" for i in range(10)]
+
+    for gname, gsize in zip(sm_graph_names, sm_graph_sizes):
+        nodes = []
+        num_crit = max(1, int(gsize * CRITICAL_FRACTION))
+        crit_ids = set(rng_sm.sample(range(gsize), num_crit))
+        for i in range(gsize):
+            nodes.append(generate_node(i, i in crit_ids, rng_sm))
+        edges = generate_edges(nodes, 3, rng_sm)
+
+        gdir = OUT_DIR / "demo_small_multigraph" / gname
+        write_csv(gdir / "nodes_train.csv", NODE_FIELDS, nodes)
+        write_csv(gdir / "edges_train.csv", EDGE_FIELDS, edges)
+        print(f"  {gname}: {len(nodes)} nodes, {len(edges)} edges")
+
     print("\n" + "=" * 60)
     print("Done! All datasets generated.")
     print("=" * 60)

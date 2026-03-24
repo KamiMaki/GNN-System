@@ -177,6 +177,14 @@ DEMO_DATASETS = [
         "edges": 800,
         "tags": ["missing-data", "outliers"],
     },
+    {
+        "id": "small_multigraph",
+        "name": "Small Multi-Graph",
+        "description": "10 small graphs (~20 nodes each) for multi-graph tasks",
+        "nodes": 200,
+        "edges": 400,
+        "tags": ["multi-graph", "small"],
+    },
 ]
 
 
@@ -499,6 +507,7 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
         "edge_attrs": mock_dir / "demo_edge_attrs",
         "multigraph": mock_dir / "demo_multigraph",
         "dirty": mock_dir / "demo_dirty",
+        "small_multigraph": mock_dir / "demo_small_multigraph",
     }
 
     if demo_id not in DEMO_DIRS:
@@ -512,7 +521,7 @@ async def load_demo_data(project_id: str, demo_id: str = Query(default="basic"))
         raise HTTPException(status_code=404, detail=f"Demo data '{demo_id}' not found on server")
 
     try:
-        if demo_id == "multigraph":
+        if demo_id in ("multigraph", "small_multigraph"):
             # Multi-graph: iterate subdirectories
             all_nodes_train = []
             all_edges_train = []
@@ -880,7 +889,8 @@ async def explore_project_data(project_id: str):
 @router.get("/{project_id}/graph-sample")
 async def get_graph_sample(
     project_id: str,
-    limit: int = Query(default=50, ge=5, le=200),
+    limit: int = Query(default=500, ge=5, le=5000),
+    graph_name: Optional[str] = Query(default=None),
 ):
     """Return a sample of the project's actual graph data for preview."""
     import pandas as pd
@@ -889,6 +899,12 @@ async def get_graph_sample(
     ds = _dataset_for_project(project)
     nodes_df = ds["nodes_df_train"]
     edges_df = ds["edges_df_train"]
+    graph_names = ds.get("graph_names", [])
+
+    # Filter by graph_name if multi-graph dataset
+    if graph_name and "_graph" in nodes_df.columns:
+        nodes_df = nodes_df[nodes_df["_graph"] == graph_name].reset_index(drop=True)
+        edges_df = edges_df[edges_df["_graph"] == graph_name].reset_index(drop=True)
 
     # Build lookup sets with original values for efficient filtering
     sample_size = min(limit, len(nodes_df))
@@ -994,6 +1010,8 @@ async def get_graph_sample(
         "num_nodes_total": len(nodes_df),
         "num_edges_total": len(edges_df),
         "sample_size": sample_size,
+        "graph_names": graph_names,
+        "current_graph": graph_name,
     }
 
 
@@ -1449,6 +1467,19 @@ async def evaluate_model_with_data(
                 "matrix": cm.tolist(),
             }
 
+        # Per-node predictions
+        node_predictions = []
+        for i in range(len(y_true)):
+            nid = str(nodes_df["node_id"].iloc[i]) if "node_id" in nodes_df.columns and i < len(nodes_df) else str(i)
+            pred_entry = {
+                "node_id": nid,
+                "true_label": round(float(y_true[i]), 4) if is_regression else str(int(y_true[i])),
+                "predicted_label": round(float(y_pred[i]), 4) if is_regression else str(int(y_pred[i])),
+            }
+            if not is_regression:
+                pred_entry["correct"] = bool(y_true[i] == y_pred[i])
+            node_predictions.append(pred_entry)
+
         return EvaluationResult(
             model_id=model_id,
             model_name=model_name,
@@ -1456,9 +1487,147 @@ async def evaluate_model_with_data(
             metrics=metrics,
             confusion_matrix=confusion_matrix_result,
             residual_data=residual_data,
+            node_predictions=node_predictions,
             num_samples=len(y_true),
             evaluated_at=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Evaluation failed: {str(e)}")
+
+
+@router.post("/{project_id}/models/{model_id}/evaluate-demo")
+async def evaluate_model_with_demo(
+    project_id: str,
+    model_id: str,
+    demo_id: str = Query(default="basic"),
+):
+    """Evaluate a registered model using a built-in demo dataset."""
+    _project_or_404(project_id)
+    record = store.get_model_record(model_id)
+    if not record or record.get("project_id") != project_id:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    model_path = Path(record.get("file_path", ""))
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Model file not found on disk")
+
+    mock_dir = Path(__file__).resolve().parent.parent.parent / "mock_data"
+    DEMO_DIRS = {
+        "basic": mock_dir / "demo_basic",
+        "edge_attrs": mock_dir / "demo_edge_attrs",
+        "multigraph": mock_dir / "demo_multigraph",
+        "dirty": mock_dir / "demo_dirty",
+        "small_multigraph": mock_dir / "demo_small_multigraph",
+    }
+    if demo_id not in DEMO_DIRS:
+        raise HTTPException(status_code=400, detail=f"Invalid demo_id. Must be one of: {', '.join(DEMO_DIRS)}")
+
+    demo_dir = DEMO_DIRS[demo_id]
+    if not demo_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Demo data '{demo_id}' not found")
+
+    try:
+        import pandas as pd
+
+        checkpoint = torch.load(str(model_path), map_location="cpu", weights_only=False)
+        model_name = checkpoint["model_name"]
+        num_features = checkpoint["num_features"]
+        num_classes = checkpoint["num_classes"]
+        task_type = checkpoint["task_type"]
+        label_column = checkpoint["label_column"]
+
+        model = get_model(
+            model_name,
+            num_features=num_features, num_classes=num_classes,
+            hidden_dim=checkpoint["hidden_dim"], num_layers=checkpoint["num_layers"],
+            dropout=checkpoint["dropout"], lr=checkpoint["lr"], task_type=task_type,
+        )
+        model.load_state_dict(checkpoint["state_dict"])
+        model.eval()
+
+        # Load demo data
+        if demo_id in ("multigraph", "small_multigraph"):
+            all_nodes = []
+            for gdir in sorted(demo_dir.iterdir()):
+                if gdir.is_dir() and (gdir / "nodes_train.csv").exists():
+                    all_nodes.append(pd.read_csv(gdir / "nodes_train.csv"))
+            nodes_df = pd.concat(all_nodes, ignore_index=True) if all_nodes else pd.DataFrame()
+            all_edges = []
+            for gdir in sorted(demo_dir.iterdir()):
+                if gdir.is_dir() and (gdir / "edges_train.csv").exists():
+                    all_edges.append(pd.read_csv(gdir / "edges_train.csv"))
+            edges_df = pd.concat(all_edges, ignore_index=True) if all_edges else pd.DataFrame()
+        else:
+            nodes_path = demo_dir / "nodes_test.csv" if (demo_dir / "nodes_test.csv").exists() else demo_dir / "nodes_train.csv"
+            edges_path = demo_dir / "edges_test.csv" if (demo_dir / "edges_test.csv").exists() else demo_dir / "edges_train.csv"
+            nodes_df = pd.read_csv(nodes_path)
+            edges_df = pd.read_csv(edges_path)
+
+        eval_data, _, _ = dataframes_to_pyg_dynamic(
+            nodes_df, edges_df, label_column=label_column, task_type=task_type, fit_scaler=True,
+        )
+
+        is_graph = task_type.startswith("graph")
+        is_regression = task_type.endswith("regression")
+
+        with torch.no_grad():
+            if is_graph:
+                batch_tensor = torch.zeros(eval_data.x.size(0), dtype=torch.long)
+                out = model(eval_data.x, eval_data.edge_index, eval_data.edge_attr, batch=batch_tensor)
+            else:
+                out = model(eval_data.x, eval_data.edge_index, eval_data.edge_attr)
+
+        y_true = eval_data.y.numpy()
+        y_pred = out.numpy() if is_regression else out.argmax(dim=-1).numpy()
+
+        if is_regression:
+            metrics = {
+                "mse": round(float(mean_squared_error(y_true, y_pred)), 4),
+                "mae": round(float(mean_absolute_error(y_true, y_pred)), 4),
+                "r2_score": round(float(r2_score(y_true, y_pred)), 4),
+            }
+            residual_data = [
+                {"actual": round(float(y_true[i]), 4), "predicted": round(float(y_pred[i]), 4)}
+                for i in range(min(500, len(y_true)))
+            ]
+            confusion_matrix_result = None
+        else:
+            avg = "binary" if len(set(y_true)) <= 2 else "macro"
+            metrics = {
+                "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
+                "f1_score": round(float(f1_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+                "precision": round(float(precision_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+                "recall": round(float(recall_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+            }
+            residual_data = None
+            unique_labels = sorted(set(y_true.tolist()) | set(y_pred.tolist()))
+            cm = sklearn_confusion_matrix(y_true, y_pred, labels=unique_labels)
+            confusion_matrix_result = {"labels": [str(l) for l in unique_labels], "matrix": cm.tolist()}
+
+        node_predictions = []
+        for i in range(len(y_true)):
+            nid = str(nodes_df["node_id"].iloc[i]) if "node_id" in nodes_df.columns and i < len(nodes_df) else str(i)
+            pred_entry = {
+                "node_id": nid,
+                "true_label": round(float(y_true[i]), 4) if is_regression else str(int(y_true[i])),
+                "predicted_label": round(float(y_pred[i]), 4) if is_regression else str(int(y_pred[i])),
+            }
+            if not is_regression:
+                pred_entry["correct"] = bool(y_true[i] == y_pred[i])
+            node_predictions.append(pred_entry)
+
+        return {
+            "model_id": model_id,
+            "model_name": model_name,
+            "task_type": task_type,
+            "metrics": metrics,
+            "confusion_matrix": confusion_matrix_result,
+            "residual_data": residual_data,
+            "node_predictions": node_predictions,
+            "num_samples": len(y_true),
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Demo evaluation failed: {str(e)}")

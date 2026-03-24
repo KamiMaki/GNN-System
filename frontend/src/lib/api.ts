@@ -189,6 +189,7 @@ export interface Report {
   history: Array<{ epoch: number; loss: number; val_loss: number; accuracy?: number }>;
   confusion_matrix: ConfusionMatrix | null;
   residual_data?: Array<{ actual: number; predicted: number }>;
+  node_predictions?: NodePrediction[];
   best_config?: BestConfig;
   leaderboard?: LeaderboardEntry[];
 }
@@ -220,6 +221,7 @@ export interface EvaluationResult {
   metrics: SplitMetrics;
   confusion_matrix: ConfusionMatrix | null;
   residual_data?: Array<{ actual: number; predicted: number }>;
+  node_predictions?: NodePrediction[];
   num_samples: number;
   evaluated_at: string;
 }
@@ -402,14 +404,44 @@ export interface GraphSampleData {
   num_nodes_total: number;
   num_edges_total: number;
   sample_size: number;
+  graph_names?: string[];
+  current_graph?: string | null;
 }
 
 export const getProjectGraphSample = async (
   projectId: string,
-  limit: number = 50,
+  limit: number = 500,
+  graphName?: string,
 ): Promise<GraphSampleData> => {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/graph-sample?limit=${limit}`);
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (graphName) params.set('graph_name', graphName);
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/graph-sample?${params}`);
   if (!res.ok) throw new Error('Failed to get graph sample');
+  return res.json();
+};
+
+// ── Node Predictions ──
+
+export interface NodePrediction {
+  node_id: string;
+  true_label: string | number;
+  predicted_label: string | number;
+  correct?: boolean;
+  confidence?: number;
+}
+
+export const evaluateModelWithDemo = async (
+  projectId: string,
+  modelId: string,
+  demoId: string,
+): Promise<EvaluationResult> => {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/models/${modelId}/evaluate-demo?demo_id=${encodeURIComponent(demoId)}`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || 'Demo evaluation failed');
+  }
   return res.json();
 };
 

@@ -61,6 +61,27 @@ export default function ExplorePage() {
 
     const [graphSample, setGraphSample] = useState<GraphSampleData | null>(null);
     const [graphSampleLoading, setGraphSampleLoading] = useState(false);
+    const [selectedGraph, setSelectedGraph] = useState<string | undefined>(undefined);
+
+    const fetchGraphSample = useCallback((graphName?: string) => {
+        if (!projectId) return;
+        setGraphSampleLoading(true);
+        getProjectGraphSample(projectId, 500, graphName)
+            .then(data => {
+                setGraphSample(data);
+                if (!graphName && data.graph_names && data.graph_names.length > 0) {
+                    // Auto-select first graph for multi-graph datasets
+                    setSelectedGraph(data.graph_names[0]);
+                    setGraphSampleLoading(true);
+                    getProjectGraphSample(projectId, 500, data.graph_names[0])
+                        .then(setGraphSample)
+                        .catch(console.error)
+                        .finally(() => setGraphSampleLoading(false));
+                }
+            })
+            .catch(console.error)
+            .finally(() => setGraphSampleLoading(false));
+    }, [projectId]);
 
     useEffect(() => {
         if (!projectId) return;
@@ -73,13 +94,8 @@ export default function ExplorePage() {
             })
             .catch(console.error)
             .finally(() => setLoading(false));
-        // Fetch graph sample for preview
-        setGraphSampleLoading(true);
-        getProjectGraphSample(projectId, 60)
-            .then(setGraphSample)
-            .catch(console.error)
-            .finally(() => setGraphSampleLoading(false));
-    }, [projectId]);
+        fetchGraphSample();
+    }, [projectId, fetchGraphSample]);
 
     const handleCorrToggle = useCallback(async (col: string) => {
         const newCols = corrColumns.includes(col)
@@ -303,7 +319,26 @@ export default function ExplorePage() {
                 </Card>
 
                 {/* SECTION: INTERACTIVE GRAPH PREVIEW */}
-                <Card title="Interactive Graph Preview">
+                <Card
+                    title="Interactive Graph Preview"
+                    extra={
+                        graphSample?.graph_names && graphSample.graph_names.length > 0 ? (
+                            <Select
+                                value={selectedGraph}
+                                onChange={(v) => {
+                                    setSelectedGraph(v);
+                                    setGraphSampleLoading(true);
+                                    getProjectGraphSample(projectId, 500, v)
+                                        .then(setGraphSample)
+                                        .catch(console.error)
+                                        .finally(() => setGraphSampleLoading(false));
+                                }}
+                                style={{ minWidth: 180 }}
+                                options={graphSample.graph_names.map(g => ({ value: g, label: g }))}
+                            />
+                        ) : null
+                    }
+                >
                     {graphSampleLoading ? (
                         <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
                             <Spin />
@@ -311,8 +346,8 @@ export default function ExplorePage() {
                     ) : graphSample && graphSample.nodes.length > 0 ? (
                         <>
                             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-                                Showing {graphSample.sample_size} of {graphSample.num_nodes_total.toLocaleString()} nodes
-                                ({graphSample.edges.length} edges in sample)
+                                {graphSample.num_nodes_total.toLocaleString()} nodes, {graphSample.num_edges_total.toLocaleString()} edges
+                                {graphSample.current_graph && ` — ${graphSample.current_graph}`}
                             </Text>
                             <GraphPreview graphSample={graphSample} />
                         </>

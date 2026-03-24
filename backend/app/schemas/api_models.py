@@ -211,6 +211,14 @@ class ConfusionMatrix(BaseModel):
     matrix: list[list[int]] # NxN matrix
 
 
+class NodePrediction(BaseModel):
+    node_id: str
+    true_label: Union[str, float]
+    predicted_label: Union[str, float]
+    correct: Optional[bool] = None
+    confidence: Optional[float] = None
+
+
 class Report(BaseModel):
     task_type: str = "node_classification"
     train_metrics: SplitMetrics
@@ -219,6 +227,7 @@ class Report(BaseModel):
     history: list[EpochHistory]
     confusion_matrix: Optional[ConfusionMatrix] = None
     residual_data: Optional[list[dict]] = None  # [{actual, predicted}] for regression
+    node_predictions: Optional[list[NodePrediction]] = None
     best_config: Optional[BestConfig] = None
     leaderboard: Optional[list[LeaderboardEntry]] = None
 
@@ -299,6 +308,7 @@ class EvaluationResult(BaseModel):
     metrics: SplitMetrics
     confusion_matrix: Optional[ConfusionMatrix] = None
     residual_data: Optional[list[dict]] = None
+    node_predictions: Optional[list[NodePrediction]] = None
     num_samples: int
     evaluated_at: str
 

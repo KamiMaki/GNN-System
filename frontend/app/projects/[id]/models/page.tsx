@@ -20,7 +20,8 @@ import {
 
 import {
     listProjectModels, deleteModel, evaluateModelWithData, updateModelInfo,
-    RegisteredModel, EvaluationResult, SplitMetrics,
+    evaluateModelWithDemo, listDemoDatasets,
+    RegisteredModel, EvaluationResult, SplitMetrics, DemoDatasetInfo,
 } from '@/lib/api';
 
 const { Title, Text, Paragraph } = Typography;
@@ -112,23 +113,39 @@ export default function ModelsPage() {
         }
     };
 
+    // Demo data for evaluation
+    const [demoDatasets, setDemoDatasets] = useState<DemoDatasetInfo[]>([]);
+    const [evalUseDemo, setEvalUseDemo] = useState(false);
+    const [evalDemoId, setEvalDemoId] = useState<string>('basic');
+
+    useEffect(() => {
+        listDemoDatasets().then(setDemoDatasets).catch(console.error);
+    }, []);
+
     const openEvalModal = (modelId: string) => {
         setEvalModelId(modelId);
         setEvalNodesFile([]);
         setEvalEdgesFile([]);
         setEvalResult(null);
         setEvalError(null);
+        setEvalUseDemo(false);
         setEvalModalOpen(true);
     };
 
     const handleEvaluate = async () => {
-        if (!evalModelId || evalNodesFile.length === 0 || evalEdgesFile.length === 0) return;
+        if (!evalModelId) return;
         setEvaluating(true);
         setEvalError(null);
         try {
-            const nodesFile = evalNodesFile[0].originFileObj as File;
-            const edgesFile = evalEdgesFile[0].originFileObj as File;
-            const result = await evaluateModelWithData(projectId, evalModelId, nodesFile, edgesFile);
+            let result: EvaluationResult;
+            if (evalUseDemo) {
+                result = await evaluateModelWithDemo(projectId, evalModelId, evalDemoId);
+            } else {
+                if (evalNodesFile.length === 0 || evalEdgesFile.length === 0) return;
+                const nodesFile = evalNodesFile[0].originFileObj as File;
+                const edgesFile = evalEdgesFile[0].originFileObj as File;
+                result = await evaluateModelWithData(projectId, evalModelId, nodesFile, edgesFile);
+            }
             setEvalResult(result);
         } catch (err: any) {
             setEvalError(err.message);
@@ -333,7 +350,7 @@ export default function ModelsPage() {
                         type="primary"
                         icon={<ExperimentOutlined />}
                         loading={evaluating}
-                        disabled={evalNodesFile.length === 0 || evalEdgesFile.length === 0}
+                        disabled={!evalUseDemo && (evalNodesFile.length === 0 || evalEdgesFile.length === 0)}
                         onClick={handleEvaluate}
                     >
                         Run Evaluation
@@ -354,37 +371,80 @@ export default function ModelsPage() {
 
                 {!evalResult ? (
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <Alert
-                            type="info"
-                            showIcon
-                            icon={<FileTextOutlined />}
-                            message="Upload CSV files with the same schema as the training data"
-                            description={`The data must contain the label column "${evalModel?.label_column}" and the same feature columns used during training.`}
-                        />
-                        <div>
-                            <Text strong style={{ display: 'block', marginBottom: 8 }}>Nodes CSV</Text>
-                            <Upload
-                                accept=".csv"
-                                maxCount={1}
-                                fileList={evalNodesFile}
-                                onChange={({ fileList }) => setEvalNodesFile(fileList)}
-                                beforeUpload={() => false}
+                        {/* Data source toggle */}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <Button
+                                type={!evalUseDemo ? 'primary' : 'default'}
+                                onClick={() => setEvalUseDemo(false)}
+                                icon={<UploadOutlined />}
                             >
-                                <Button icon={<UploadOutlined />}>Select nodes file</Button>
-                            </Upload>
-                        </div>
-                        <div>
-                            <Text strong style={{ display: 'block', marginBottom: 8 }}>Edges CSV</Text>
-                            <Upload
-                                accept=".csv"
-                                maxCount={1}
-                                fileList={evalEdgesFile}
-                                onChange={({ fileList }) => setEvalEdgesFile(fileList)}
-                                beforeUpload={() => false}
+                                Upload CSV
+                            </Button>
+                            <Button
+                                type={evalUseDemo ? 'primary' : 'default'}
+                                onClick={() => setEvalUseDemo(true)}
+                                icon={<DatabaseOutlined />}
                             >
-                                <Button icon={<UploadOutlined />}>Select edges file</Button>
-                            </Upload>
+                                Use Demo Data
+                            </Button>
                         </div>
+
+                        {evalUseDemo ? (
+                            <div>
+                                <Text strong style={{ display: 'block', marginBottom: 8 }}>Select Demo Dataset</Text>
+                                <select
+                                    value={evalDemoId}
+                                    onChange={e => setEvalDemoId(e.target.value)}
+                                    style={{
+                                        width: '100%', padding: '8px 12px', borderRadius: 8,
+                                        border: `1px solid ${token.colorBorder}`,
+                                        background: token.colorBgContainer, color: token.colorText,
+                                        fontSize: 14,
+                                    }}
+                                >
+                                    {demoDatasets.map(d => (
+                                        <option key={d.id} value={d.id}>{d.name} ({d.nodes} nodes)</option>
+                                    ))}
+                                </select>
+                                <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+                                    {demoDatasets.find(d => d.id === evalDemoId)?.description}
+                                </Text>
+                            </div>
+                        ) : (
+                            <>
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    icon={<FileTextOutlined />}
+                                    message="Upload CSV files with the same schema as the training data"
+                                    description={`The data must contain the label column "${evalModel?.label_column}" and the same feature columns used during training.`}
+                                />
+                                <div>
+                                    <Text strong style={{ display: 'block', marginBottom: 8 }}>Nodes CSV</Text>
+                                    <Upload
+                                        accept=".csv"
+                                        maxCount={1}
+                                        fileList={evalNodesFile}
+                                        onChange={({ fileList }) => setEvalNodesFile(fileList)}
+                                        beforeUpload={() => false}
+                                    >
+                                        <Button icon={<UploadOutlined />}>Select nodes file</Button>
+                                    </Upload>
+                                </div>
+                                <div>
+                                    <Text strong style={{ display: 'block', marginBottom: 8 }}>Edges CSV</Text>
+                                    <Upload
+                                        accept=".csv"
+                                        maxCount={1}
+                                        fileList={evalEdgesFile}
+                                        onChange={({ fileList }) => setEvalEdgesFile(fileList)}
+                                        beforeUpload={() => false}
+                                    >
+                                        <Button icon={<UploadOutlined />}>Select edges file</Button>
+                                    </Upload>
+                                </div>
+                            </>
+                        )}
                         {evalError && <Alert type="error" showIcon message={evalError} />}
                     </Space>
                 ) : (
