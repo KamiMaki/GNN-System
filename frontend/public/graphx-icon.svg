@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0891b2"/>
+      <stop offset="50%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.3"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- Graph edges -->
+  <g stroke="url(#edge)" stroke-width="5" stroke-linecap="round">
+    <!-- Central hub connections -->
+    <line x1="256" y1="256" x2="140" y2="150"/>
+    <line x1="256" y1="256" x2="372" y2="150"/>
+    <line x1="256" y1="256" x2="140" y2="362"/>
+    <line x1="256" y1="256" x2="372" y2="362"/>
+    <!-- Outer connections -->
+    <line x1="140" y1="150" x2="372" y2="150"/>
+    <line x1="140" y1="362" x2="372" y2="362"/>
+    <line x1="140" y1="150" x2="140" y2="362"/>
+    <line x1="372" y1="150" x2="372" y2="362"/>
+    <!-- Diagonal crosses -->
+    <line x1="140" y1="150" x2="372" y2="362"/>
+    <line x1="372" y1="150" x2="140" y2="362"/>
+  </g>
+
+  <!-- Graph nodes -->
+  <g filter="url(#glow)">
+    <!-- Central node (largest) -->
+    <circle cx="256" cy="256" r="28" fill="#ffffff"/>
+    <circle cx="256" cy="256" r="18" fill="url(#bg)"/>
+
+    <!-- Top-left -->
+    <circle cx="140" cy="150" r="22" fill="#ffffff"/>
+    <circle cx="140" cy="150" r="14" fill="#10b981"/>
+
+    <!-- Top-right -->
+    <circle cx="372" cy="150" r="22" fill="#ffffff"/>
+    <circle cx="372" cy="150" r="14" fill="#f59e0b"/>
+
+    <!-- Bottom-left -->
+    <circle cx="140" cy="362" r="22" fill="#ffffff"/>
+    <circle cx="140" cy="362" r="14" fill="#8b5cf6"/>
+
+    <!-- Bottom-right -->
+    <circle cx="372" cy="362" r="22" fill="#ffffff"/>
+    <circle cx="372" cy="362" r="14" fill="#06b6d4"/>
+  </g>
+
+  <!-- "X" letter overlay in center node -->
+  <text x="256" y="263" text-anchor="middle" dominant-baseline="middle"
+        font-family="Inter, Arial, sans-serif" font-weight="900" font-size="24" fill="#ffffff"
+        letter-spacing="-1">X</text>
+</svg>

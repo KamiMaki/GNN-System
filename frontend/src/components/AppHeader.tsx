@@ -5,7 +5,7 @@ import {
     Button, Avatar, Dropdown, Breadcrumb, Steps, Divider, Tag, Typography, theme, Grid, Drawer, Space,
 } from 'antd';
 import {
-    AppstoreOutlined, UserOutlined, SettingOutlined, LogoutOutlined,
+    UserOutlined, SettingOutlined, LogoutOutlined,
     SunOutlined, MoonOutlined, MenuOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -90,24 +90,13 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
 
     const logoSection = (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                background: `linear-gradient(135deg, ${token.colorPrimary}, #06b6d4)`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(8, 145, 178, 0.25)',
-            }}>
-                <AppstoreOutlined style={{ fontSize: 16, color: '#fff' }} />
-            </div>
+            <img src="/graphx-icon.svg" alt="GraphX.AI" style={{ width: 32, height: 32, borderRadius: 8 }} />
             <Button
                 type="text"
                 onClick={() => router.push('/dashboard')}
                 style={{ fontWeight: 800, fontSize: '1rem', padding: '4px 4px' }}
             >
-                <span className="gradient-text">LayoutXpert</span>
+                <span className="gradient-text">GraphX</span>
             </Button>
         </div>
     );

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, Button, Input, Radio, Checkbox, Divider, Typography, Space, theme } from 'antd';
-import { AppstoreOutlined, SafetyOutlined, BankOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { SafetyOutlined, BankOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 
 const { Title, Text, Link } = Typography;
@@ -66,29 +66,23 @@ export default function LoginPage() {
                             animate={{ rotate: 0, scale: 1 }}
                             transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
                         >
-                            <div style={{
+                            <img src="/graphx-icon.svg" alt="GraphX.AI" style={{
                                 width: 72,
                                 height: 72,
                                 borderRadius: 20,
-                                background: `linear-gradient(135deg, ${token.colorPrimary}, #06b6d4, #10b981)`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
                                 margin: '0 auto',
                                 boxShadow: `0 8px 32px rgba(8, 145, 178, 0.3)`,
-                            }}>
-                                <AppstoreOutlined style={{ fontSize: 32, color: '#fff' }} />
-                            </div>
+                            }} />
                         </motion.div>
 
                         <div>
                             <Title level={3} style={{ margin: 0, letterSpacing: '-0.5px' }}>
-                                <span className="gradient-text">LayoutXpert</span>
+                                <span className="gradient-text">GraphX</span>
                                 <span style={{ opacity: 0.5, fontWeight: 400 }}>.AI</span>
                             </Title>
                             <Space size={4} style={{ marginTop: 4 }}>
                                 <BankOutlined style={{ opacity: 0.5 }} />
-                                <Text type="secondary" style={{ fontSize: 13 }}>ChipDesign Corp.</Text>
+                                <Text type="secondary" style={{ fontSize: 13 }}>Graph Intelligence Platform</Text>
                             </Space>
                         </div>
 
@@ -192,7 +186,7 @@ export default function LoginPage() {
                     style={{ textAlign: 'center', marginTop: 24 }}
                 >
                     <Text type="secondary" style={{ fontSize: 11, letterSpacing: 3, fontWeight: 500 }}>
-                        GNN-POWERED LAYOUT ANALYSIS
+                        GNN-POWERED GRAPH INTELLIGENCE
                     </Text>
                 </motion.div>
             </motion.div>

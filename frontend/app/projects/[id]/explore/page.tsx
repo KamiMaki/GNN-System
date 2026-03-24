@@ -18,6 +18,8 @@ import {
     GenericExploreData, ColumnInfo, ColumnStats, NumericColumnStats, CategoricalColumnStats,
     LabelValidationResult,
 } from '@/lib/api';
+import { MOCK_GRAPH_DATASETS, MockGraphDataset } from '@/lib/mockGraphData';
+import GraphPreview from '@/components/GraphPreview';
 
 const { Title, Text } = Typography;
 
@@ -56,6 +58,8 @@ export default function ExplorePage() {
 
     const [confirming, setConfirming] = useState(false);
     const [confirmError, setConfirmError] = useState<string | null>(null);
+
+    const [previewDatasetId, setPreviewDatasetId] = useState<string>(MOCK_GRAPH_DATASETS[0]?.id || '');
 
     useEffect(() => {
         if (!projectId) return;
@@ -289,6 +293,37 @@ export default function ExplorePage() {
                             </div>
                         </div>
                     )}
+                </Card>
+
+                {/* SECTION: INTERACTIVE GRAPH PREVIEW */}
+                <Card
+                    title="Interactive Graph Preview"
+                    extra={
+                        <Select
+                            value={previewDatasetId}
+                            onChange={setPreviewDatasetId}
+                            style={{ minWidth: 260 }}
+                            options={MOCK_GRAPH_DATASETS.map(d => ({
+                                value: d.id,
+                                label: (
+                                    <Space>
+                                        {d.name}
+                                        <Tag color={d.isMultiGraph ? 'geekblue' : 'cyan'} style={{ fontSize: 11 }}>
+                                            {d.isMultiGraph ? 'multi-graph' : 'single-graph'}
+                                        </Tag>
+                                    </Space>
+                                ),
+                            }))}
+                        />
+                    }
+                >
+                    <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                        {MOCK_GRAPH_DATASETS.find(d => d.id === previewDatasetId)?.description}
+                    </Text>
+                    {(() => {
+                        const ds = MOCK_GRAPH_DATASETS.find(d => d.id === previewDatasetId);
+                        return ds ? <GraphPreview dataset={ds} /> : null;
+                    })()}
                 </Card>
 
                 {/* SECTION II: NODE ANALYSIS */}

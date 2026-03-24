@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme, Button, Divider } from 'antd';
+import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme, Button, Divider, Select } from 'antd';
 import { TrophyOutlined, RocketOutlined, ArrowRightOutlined } from '@ant-design/icons';
 
 import {
@@ -12,6 +12,8 @@ import {
 } from 'recharts';
 
 import { getProjectReport, getExperimentReport, Report, SplitMetrics } from '@/lib/api';
+import { MOCK_GRAPH_DATASETS } from '@/lib/mockGraphData';
+import PredictionTable from '@/components/PredictionTable';
 
 const { Title, Text } = Typography;
 
@@ -66,6 +68,7 @@ export default function EvaluatePage() {
     const [report, setReport] = useState<Report | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [predDatasetId, setPredDatasetId] = useState<string>(MOCK_GRAPH_DATASETS[0]?.id || '');
 
     useEffect(() => {
         if (!projectId) return;
@@ -317,6 +320,38 @@ export default function EvaluatePage() {
                         />
                     </Card>
                 )}
+
+                {/* Prediction Results Table */}
+                <Divider />
+                <Card
+                    title="Per-Instance Prediction Results"
+                    extra={
+                        <Select
+                            value={predDatasetId}
+                            onChange={setPredDatasetId}
+                            style={{ minWidth: 260 }}
+                            options={MOCK_GRAPH_DATASETS.map(d => ({
+                                value: d.id,
+                                label: (
+                                    <Space>
+                                        {d.name}
+                                        <Tag color={d.taskLevel === 'node' ? 'cyan' : 'geekblue'} style={{ fontSize: 11 }}>
+                                            {d.taskLevel}-level
+                                        </Tag>
+                                    </Space>
+                                ),
+                            }))}
+                        />
+                    }
+                >
+                    <Tag color="blue" style={{ marginBottom: 12 }}>
+                        {MOCK_GRAPH_DATASETS.find(d => d.id === predDatasetId)?.description}
+                    </Tag>
+                    {(() => {
+                        const ds = MOCK_GRAPH_DATASETS.find(d => d.id === predDatasetId);
+                        return ds ? <PredictionTable dataset={ds} /> : null;
+                    })()}
+                </Card>
             </Space>
         </div>
     );
