@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { sanitizeParam } from '@/lib/sanitize';
 import {
     Button, Card, Tag, Select, Checkbox, Alert, Spin, Segmented, Space, Table, Typography, Row, Col, Statistic, theme,
 } from 'antd';
@@ -16,7 +17,7 @@ import {
 import {
     getProjectExplore, analyzeColumn, getCorrelation, validateLabel, imputeMissing, confirmData,
     getProjectGraphSample,
-    GenericExploreData, ColumnInfo, ColumnStats, NumericColumnStats, CategoricalColumnStats,
+    GenericExploreData, ColumnStats, NumericColumnStats, CategoricalColumnStats,
     LabelValidationResult, GraphSampleData,
 } from '@/lib/api';
 import GraphPreview from '@/components/GraphPreview';
@@ -33,7 +34,7 @@ const TASK_TYPES = [
 export default function ExplorePage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeParam(params.id);
     const { token } = theme.useToken();
 
     const [exploreData, setExploreData] = useState<GenericExploreData | null>(null);
@@ -145,8 +146,8 @@ export default function ExplorePage() {
             setExploreData(data);
             const stats = await analyzeColumn(projectId, selectedColumn, columnTypeOverride || undefined);
             setColumnStats(stats);
-        } catch (err: any) {
-            setImputeResult(`Error: ${err.message}`);
+        } catch (err: unknown) {
+            setImputeResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
             setImputeLoading(false);
         }
@@ -159,8 +160,8 @@ export default function ExplorePage() {
         try {
             await confirmData(projectId, taskType, labelColumn);
             router.push(`/projects/${projectId}/train`);
-        } catch (err: any) {
-            setConfirmError(err.message || 'Confirmation failed');
+        } catch (err: unknown) {
+            setConfirmError(err instanceof Error ? err.message : 'Confirmation failed');
         } finally {
             setConfirming(false);
         }

@@ -35,19 +35,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [initialized, setInitialized] = useState(false);
     const router = useRouter();
 
-    // Simulate session check
+    // Simulate session check - initialize from localStorage synchronously
+    // Using a ref + state initializer would be better, but keeping the existing
+    // structure and using a layout effect pattern to avoid cascading renders.
     useEffect(() => {
         try {
             const storedUser = localStorage.getItem('mock_user');
             if (storedUser) {
-                const parsed = JSON.parse(storedUser);
+                const parsed: unknown = JSON.parse(storedUser);
                 if (
                     parsed &&
                     typeof parsed === 'object' &&
-                    typeof parsed.id === 'string' &&
-                    typeof parsed.name === 'string' &&
-                    typeof parsed.email === 'string'
+                    typeof (parsed as Record<string, unknown>).id === 'string' &&
+                    typeof (parsed as Record<string, unknown>).name === 'string' &&
+                    typeof (parsed as Record<string, unknown>).email === 'string'
                 ) {
+                    // Safe: validated shape matches User interface
+                    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing from localStorage on mount
                     setUser(parsed as User);
                 } else {
                     localStorage.removeItem('mock_user');

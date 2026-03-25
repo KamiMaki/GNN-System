@@ -5,21 +5,23 @@ import { useParams, usePathname } from 'next/navigation';
 import { Skeleton } from 'antd';
 import PipelineStepper from '@/components/PipelineStepper';
 import { getProject, ProjectDetail } from '@/lib/api';
+import { sanitizeParam } from '@/lib/sanitize';
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
     const params = useParams();
     const pathname = usePathname();
-    const projectId = params.id as string;
+    const projectId = sanitizeParam(params.id);
     const [project, setProject] = useState<ProjectDetail | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         if (!projectId) return;
-        setLoading(true);
+        let cancelled = false;
         getProject(projectId)
-            .then(setProject)
+            .then(data => { if (!cancelled) setProject(data); })
             .catch(console.error)
-            .finally(() => setLoading(false));
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
     }, [projectId, pathname]);
 
     if (loading) {

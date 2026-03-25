@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Card, Breadcrumb, Divider, Typography, Space } from 'antd';
 import { ReadOutlined, ClusterOutlined, ToolOutlined, ExperimentOutlined } from '@ant-design/icons';
 
@@ -23,7 +24,7 @@ export default function DocumentationPage() {
                 <Breadcrumb
                     style={{ marginBottom: 24 }}
                     items={[
-                        { title: <a href="/">Home</a> },
+                        { title: <Link href="/">Home</Link> },
                         { title: 'Documentation' },
                     ]}
                 />

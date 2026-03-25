@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { sanitizeParam } from '@/lib/sanitize';
 import { Card, Tag, Spin, Table, Space, Alert, Statistic, Row, Col, Typography, theme, Button, Input, Select } from 'antd';
 import { TrophyOutlined, RocketOutlined, ArrowRightOutlined, CheckCircleOutlined, CloseCircleOutlined, SearchOutlined } from '@ant-design/icons';
 
@@ -58,7 +59,7 @@ export default function EvaluatePage() {
     const params = useParams();
     const searchParams = useSearchParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeParam(params.id);
     const taskIdParam = searchParams.get('task_id');
     const { token } = theme.useToken();
 
@@ -71,14 +72,15 @@ export default function EvaluatePage() {
 
     useEffect(() => {
         if (!projectId) return;
-        setLoading(true);
+        let cancelled = false;
         const fetchReport = taskIdParam
             ? getExperimentReport(projectId, taskIdParam)
             : getProjectReport(projectId);
         fetchReport
-            .then(setReport)
-            .catch(err => setError(err.message))
-            .finally(() => setLoading(false));
+            .then(data => { if (!cancelled) setReport(data); })
+            .catch(err => { if (!cancelled) setError(err.message); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
     }, [projectId, taskIdParam]);
 
     if (loading) {
@@ -119,7 +121,7 @@ export default function EvaluatePage() {
     const leaderboardColumns = [
         {
             title: 'Rank', dataIndex: 'rank', key: 'rank',
-            render: (_: any, __: any, i: number) => i === 0 ? '\ud83e\udd47' : i === 1 ? '\ud83e\udd48' : i === 2 ? '\ud83e\udd49' : `#${i + 1}`,
+            render: (_: unknown, __: unknown, i: number) => i === 0 ? '\ud83e\udd47' : i === 1 ? '\ud83e\udd48' : i === 2 ? '\ud83e\udd49' : `#${i + 1}`,
         },
         { title: 'Trial', dataIndex: 'trial', key: 'trial' },
         { title: 'Model', dataIndex: 'model', key: 'model', render: (v: string) => <Text strong>{v.toUpperCase()}</Text> },
@@ -343,7 +345,7 @@ export default function EvaluatePage() {
                             }}
                             size="small"
                             scroll={{ y: 500 }}
-                            rowClassName={(record: any) =>
+                            rowClassName={(record: NodePrediction) =>
                                 record.correct === true ? '' : record.correct === false ? 'ant-table-row-selected' : ''
                             }
                         />

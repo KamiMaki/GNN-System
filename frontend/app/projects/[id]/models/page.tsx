@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { sanitizeParam } from '@/lib/sanitize';
 import {
-    Card, Button, Tag, Spin, Space, Table, Alert, Typography, theme,
+    Card, Button, Tag, Spin, Space, Alert, Typography, theme,
     Modal, Upload, Statistic, Row, Col, Empty, Popconfirm, Input, message,
-    Descriptions, Divider, Tooltip, Badge,
+    Descriptions, Tooltip, Badge,
 } from 'antd';
 import {
     RocketOutlined, UploadOutlined, DeleteOutlined, EditOutlined,
@@ -24,7 +25,7 @@ import {
     RegisteredModel, EvaluationResult, SplitMetrics, DemoDatasetInfo,
 } from '@/lib/api';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 function MetricValue({ label, value, suffix }: { label: string; value: number | null; suffix?: string }) {
     if (value === null || value === undefined) return null;
@@ -63,7 +64,7 @@ function MetricsDisplay({ metrics, taskType }: { metrics: SplitMetrics; taskType
 export default function ModelsPage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeParam(params.id);
     const { token } = theme.useToken();
 
     const [models, setModels] = useState<RegisteredModel[]>([]);
@@ -94,8 +95,8 @@ export default function ModelsPage() {
         try {
             const data = await listProjectModels(projectId);
             setModels(data);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : String(err));
         } finally {
             setLoading(false);
         }
@@ -108,8 +109,8 @@ export default function ModelsPage() {
             await deleteModel(projectId, modelId);
             message.success('Model deleted');
             fetchModels();
-        } catch (err: any) {
-            message.error(err.message);
+        } catch (err: unknown) {
+            message.error(err instanceof Error ? err.message : String(err));
         }
     };
 
@@ -147,8 +148,8 @@ export default function ModelsPage() {
                 result = await evaluateModelWithData(projectId, evalModelId, nodesFile, edgesFile);
             }
             setEvalResult(result);
-        } catch (err: any) {
-            setEvalError(err.message);
+        } catch (err: unknown) {
+            setEvalError(err instanceof Error ? err.message : String(err));
         } finally {
             setEvaluating(false);
         }
@@ -168,8 +169,8 @@ export default function ModelsPage() {
             message.success('Model updated');
             setEditModalOpen(false);
             fetchModels();
-        } catch (err: any) {
-            message.error(err.message);
+        } catch (err: unknown) {
+            message.error(err instanceof Error ? err.message : String(err));
         }
     };
 
