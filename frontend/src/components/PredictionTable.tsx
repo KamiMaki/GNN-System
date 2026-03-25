@@ -57,7 +57,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
       return rows;
     } else {
       // Graph-level: each row = one graph
-      return dataset.graphs.map(g => {
+      return dataset.graphs.map((g): PredictionRow => {
         const correct = g.graphLabel === g.predictedGraphLabel;
         return {
           key: g.graphId,

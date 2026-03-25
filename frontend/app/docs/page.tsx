@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Card, Breadcrumb, Divider, Typography, Space } from 'antd';
 import { ReadOutlined, ClusterOutlined, ToolOutlined, ExperimentOutlined } from '@ant-design/icons';
 
-const { Title, Paragraph, Text, Link } = Typography;
+const { Title, Paragraph, Text } = Typography;
 
 const Section = ({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) => (
     <Card style={{ marginBottom: 24 }}>

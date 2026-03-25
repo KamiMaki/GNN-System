@@ -1,4 +1,3 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   listProjects,
   getProject,
@@ -20,7 +19,7 @@ import {
 
 const API_BASE = 'http://localhost:8000';
 
-const mockFetch = vi.fn();
+const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
 beforeEach(() => {

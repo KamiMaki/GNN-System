@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, Button, Input, Radio, Checkbox, Divider, Typography, Space, theme } from 'antd';
 import { SafetyOutlined, BankOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
+import Image from 'next/image';
 
 const { Title, Text, Link } = Typography;
 
@@ -66,9 +67,7 @@ export default function LoginPage() {
                             animate={{ rotate: 0, scale: 1 }}
                             transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
                         >
-                            <img src="/graphx-icon.svg" alt="GraphX.AI" style={{
-                                width: 72,
-                                height: 72,
+                            <Image src="/graphx-icon.svg" alt="GraphX.AI" width={72} height={72} style={{
                                 borderRadius: 20,
                                 margin: '0 auto',
                                 boxShadow: `0 8px 32px rgba(8, 145, 178, 0.3)`,

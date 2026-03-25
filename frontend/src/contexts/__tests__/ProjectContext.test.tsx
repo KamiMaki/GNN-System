@@ -1,23 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ProjectProvider, useProject } from '../ProjectContext';
 
 // Mock the API module
-vi.mock('@/lib/api', () => ({
-  listProjects: vi.fn(),
-  getProject: vi.fn(),
-  createProject: vi.fn(),
+jest.mock('@/lib/api', () => ({
+  listProjects: jest.fn(),
+  getProject: jest.fn(),
+  createProject: jest.fn(),
 }));
 
 import { listProjects, getProject, createProject } from '@/lib/api';
-const mockListProjects = vi.mocked(listProjects);
-const mockGetProject = vi.mocked(getProject);
-const mockCreateProject = vi.mocked(createProject);
+const mockListProjects = jest.mocked(listProjects);
+const mockGetProject = jest.mocked(getProject);
+const mockCreateProject = jest.mocked(createProject);
 
 // Mock next/navigation
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
   usePathname: () => '/',
 }));
 
@@ -40,7 +39,7 @@ function TestConsumer() {
 
 describe('ProjectContext', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     mockListProjects.mockResolvedValue([]);
   });
 

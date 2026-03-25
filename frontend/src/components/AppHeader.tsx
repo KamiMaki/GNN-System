@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { ColorModeContext } from '@/contexts/ColorModeContext';
+import Image from 'next/image';
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -90,7 +91,7 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
 
     const logoSection = (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <img src="/graphx-icon.svg" alt="GraphX.AI" style={{ width: 32, height: 32, borderRadius: 8 }} />
+            <Image src="/graphx-icon.svg" alt="GraphX.AI" width={32} height={32} style={{ borderRadius: 8 }} />
             <Button
                 type="text"
                 onClick={() => router.push('/dashboard')}

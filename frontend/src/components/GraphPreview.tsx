@@ -81,22 +81,26 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
     );
   }, [graphSample, detailNode]);
 
-  const handleNodeClick = useCallback((node: { id: string }) => {
-    setSelectedNodeId((prev: string | null) => prev === node.id ? null : node.id);
+  const handleNodeClick = useCallback((node: { id?: string | number; [key: string]: unknown }) => {
+    const id = String(node.id ?? '');
+    setSelectedNodeId((prev: string | null) => prev === id ? null : id);
   }, []);
 
-  const handleNodeHover = useCallback((node: { id: string } | null) => {
-    setHoveredNodeId(node ? node.id : null);
+  const handleNodeHover = useCallback((node: { id?: string | number; [key: string]: unknown } | null) => {
+    setHoveredNodeId(node ? String(node.id ?? '') : null);
   }, []);
 
-  const nodeCanvasObject = useCallback((node: { id: string; x: number; y: number; color?: string; label?: string }, ctx: CanvasRenderingContext2D, globalScale: number) => {
+  const nodeCanvasObject = useCallback((node: { id?: string | number; x?: number; y?: number; color?: string; label?: string; [key: string]: unknown }, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const size = 5;
-    const isSelected = node.id === selectedNodeId;
-    const isHovered = node.id === hoveredNodeId;
+    const id = String(node.id ?? '');
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
+    const isSelected = id === selectedNodeId;
+    const isHovered = id === hoveredNodeId;
 
     ctx.beginPath();
-    ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
-    ctx.fillStyle = node.color || '#0891b2';
+    ctx.arc(x, y, size, 0, 2 * Math.PI);
+    ctx.fillStyle = (node.color as string) || '#0891b2';
     ctx.fill();
 
     if (isSelected || isHovered) {
@@ -106,13 +110,13 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
     }
 
     if (globalScale > 2) {
-      const label = node.label || node.id;
+      const label = (node.label as string) || id;
       const fontSize = Math.max(3, 10 / globalScale);
       ctx.font = `${fontSize}px Inter, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillStyle = token.colorText || '#333';
-      ctx.fillText(label, node.x, node.y + size + 2);
+      ctx.fillText(label, x, y + size + 2);
     }
   }, [selectedNodeId, hoveredNodeId, token.colorText]);
 
@@ -164,9 +168,9 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
             width={Math.max(300, containerWidth - 2)}
             height={418}
             nodeCanvasObject={nodeCanvasObject}
-            nodePointerAreaPaint={(node: { x: number; y: number }, color: string, ctx: CanvasRenderingContext2D) => {
+            nodePointerAreaPaint={(node: { x?: number; y?: number; [key: string]: unknown }, color: string, ctx: CanvasRenderingContext2D) => {
               ctx.beginPath();
-              ctx.arc(node.x, node.y, 7, 0, 2 * Math.PI);
+              ctx.arc(node.x ?? 0, node.y ?? 0, 7, 0, 2 * Math.PI);
               ctx.fillStyle = color;
               ctx.fill();
             }}
