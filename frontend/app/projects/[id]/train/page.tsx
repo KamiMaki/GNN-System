@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { sanitizeParam } from '@/lib/sanitize';
 import {
     Button, Card, Tag, Slider, Switch, Alert, Spin, Space, Table, Tooltip, Progress, Typography, Checkbox, Row, Col, theme,
 } from 'antd';
@@ -30,7 +31,7 @@ function formatTime(seconds: number): string {
 export default function TrainPage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeParam(params.id);
     const { token } = theme.useToken();
 
     const [project, setProject] = useState<ProjectDetail | null>(null);
@@ -70,11 +71,14 @@ export default function TrainPage() {
 
     useEffect(() => {
         if (!projectId) return;
+        let cancelled = false;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- loading state for async fetch
         setEstimateLoading(true);
         estimateTraining(projectId, nTrials)
-            .then(setEstimate)
+            .then(data => { if (!cancelled) setEstimate(data); })
             .catch(console.error)
-            .finally(() => setEstimateLoading(false));
+            .finally(() => { if (!cancelled) setEstimateLoading(false); });
+        return () => { cancelled = true; };
     }, [projectId, nTrials]);
 
     useEffect(() => {
@@ -110,9 +114,11 @@ export default function TrainPage() {
 
     useEffect(() => {
         const startedAt = taskStatus?.started_at;
+        const results = taskStatus?.results;
         if (!startedAt || (!training && taskStatus?.status !== 'COMPLETED')) return;
-        if (taskStatus?.status === 'COMPLETED' && taskStatus?.results) {
-            setElapsed(taskStatus.results.training_time_seconds);
+        if (taskStatus?.status === 'COMPLETED' && results) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing elapsed from completed task
+            setElapsed(results.training_time_seconds);
             return;
         }
         const startTime = new Date(startedAt).getTime();
@@ -120,7 +126,7 @@ export default function TrainPage() {
         tick();
         const interval = setInterval(tick, 1000);
         return () => clearInterval(interval);
-    }, [taskStatus?.started_at, training, taskStatus?.status]);
+    }, [taskStatus?.started_at, training, taskStatus?.status, taskStatus?.results]);
 
     useEffect(() => {
         if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -135,8 +141,8 @@ export default function TrainPage() {
             const status = await startProjectTraining(projectId, models, nTrials);
             setTaskStatus(status);
             setTraining(true);
-        } catch (err: any) {
-            setError(err.message || 'Failed to start training');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Failed to start training');
         }
     };
 
@@ -163,7 +169,7 @@ export default function TrainPage() {
         { title: 'Date', dataIndex: 'date', key: 'date' },
         {
             title: '', dataIndex: 'action', key: 'action',
-            render: (_: any, record: any) => record.canView ? <a>View</a> : null,
+            render: (_: unknown, record: { canView: boolean }) => record.canView ? <a>View</a> : null,
         },
     ];
 

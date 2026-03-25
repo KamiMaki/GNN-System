@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { sanitizeParam } from '@/lib/sanitize';
 import {
     Button, Card, Tag, Table, Space, Typography, Row, Col, Statistic, Empty, Spin, theme,
 } from 'antd';
@@ -13,7 +14,7 @@ import {
 } from '@ant-design/icons';
 
 import {
-    getProject, listExperiments, ProjectDetail, TaskStatus, DatasetSummary,
+    getProject, listExperiments, ProjectDetail, TaskStatus,
 } from '@/lib/api';
 import PageTransition from '@/components/PageTransition';
 
@@ -61,7 +62,7 @@ const STATUS_COLOR: Record<string, string> = {
 export default function ProjectOverviewPage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeParam(params.id);
     const { token } = theme.useToken();
 
     const [project, setProject] = useState<ProjectDetail | null>(null);

@@ -7,6 +7,20 @@ import type { MockGraphDataset } from '@/lib/mockGraphData';
 
 const { Text } = Typography;
 
+interface PredictionRow {
+  key: string;
+  graphId: string;
+  graphName: string;
+  nodeId?: string;
+  nodeLabel?: string;
+  nodeCount?: number;
+  edgeCount?: number;
+  trueLabel: string;
+  predictedLabel: string;
+  confidence: number;
+  correct: boolean;
+}
+
 interface PredictionTableProps {
   dataset: MockGraphDataset;
 }
@@ -23,7 +37,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
   const rawData = useMemo(() => {
     if (isNodeLevel) {
       // Node-level: each row = one node
-      const rows: any[] = [];
+      const rows: PredictionRow[] = [];
       for (const graph of dataset.graphs) {
         for (const node of graph.nodes) {
           const correct = node.trueLabel === node.predictedLabel;
@@ -64,14 +78,14 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
   const filteredData = useMemo(() => {
     let data = rawData;
     if (graphFilter !== 'all') {
-      data = data.filter((r: any) => r.graphId === graphFilter);
+      data = data.filter((r) => r.graphId === graphFilter);
     }
     if (classFilter !== 'all') {
-      data = data.filter((r: any) => r.trueLabel === classFilter);
+      data = data.filter((r) => r.trueLabel === classFilter);
     }
     if (searchText) {
       const q = searchText.toLowerCase();
-      data = data.filter((r: any) =>
+      data = data.filter((r) =>
         (r.nodeLabel || r.graphName || '').toLowerCase().includes(q) ||
         (r.trueLabel || '').toLowerCase().includes(q) ||
         (r.predictedLabel || '').toLowerCase().includes(q)
@@ -81,14 +95,14 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
   }, [rawData, graphFilter, classFilter, searchText]);
 
   // ── Per-row metrics ──
-  const correctCount = filteredData.filter((r: any) => r.correct).length;
+  const correctCount = filteredData.filter((r) => r.correct).length;
   const totalCount = filteredData.length;
   const filteredAccuracy = totalCount > 0 ? (correctCount / totalCount) : 0;
 
   // ── Available classes ──
   const availableClasses = useMemo(() => {
     const set = new Set<string>();
-    rawData.forEach((r: any) => { if (r.trueLabel !== '-') set.add(r.trueLabel); });
+    rawData.forEach((r) => { if (r.trueLabel !== '-') set.add(r.trueLabel); });
     return Array.from(set);
   }, [rawData]);
 
@@ -120,7 +134,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
       dataIndex: 'predictedLabel',
       key: 'predictedLabel',
       width: 120,
-      render: (v: string, record: any) => (
+      render: (v: string, record: PredictionRow) => (
         <Tag color={record.correct ? 'green' : 'red'}>{v}</Tag>
       ),
     },
@@ -129,7 +143,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
       dataIndex: 'confidence',
       key: 'confidence',
       width: 110,
-      sorter: (a: any, b: any) => a.confidence - b.confidence,
+      sorter: (a: PredictionRow, b: PredictionRow) => a.confidence - b.confidence,
       render: (v: number) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{
@@ -159,7 +173,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
         { text: 'Correct', value: true },
         { text: 'Wrong', value: false },
       ],
-      onFilter: (value: any, record: any) => record.correct === value,
+      onFilter: (value: boolean | React.Key, record: PredictionRow) => record.correct === value,
       render: (v: boolean) => (
         <Tag color={v ? 'success' : 'error'}>{v ? 'Correct' : 'Wrong'}</Tag>
       ),
@@ -180,14 +194,14 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
       dataIndex: 'nodeCount',
       key: 'nodeCount',
       width: 80,
-      sorter: (a: any, b: any) => a.nodeCount - b.nodeCount,
+      sorter: (a: PredictionRow, b: PredictionRow) => (a.nodeCount ?? 0) - (b.nodeCount ?? 0),
     },
     {
       title: 'Edges',
       dataIndex: 'edgeCount',
       key: 'edgeCount',
       width: 80,
-      sorter: (a: any, b: any) => a.edgeCount - b.edgeCount,
+      sorter: (a: PredictionRow, b: PredictionRow) => (a.edgeCount ?? 0) - (b.edgeCount ?? 0),
     },
     {
       title: 'True Label',
@@ -201,7 +215,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
       dataIndex: 'predictedLabel',
       key: 'predictedLabel',
       width: 120,
-      render: (v: string, record: any) => (
+      render: (v: string, record: PredictionRow) => (
         <Tag color={record.correct ? 'green' : 'red'}>{v}</Tag>
       ),
     },
@@ -210,7 +224,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
       dataIndex: 'confidence',
       key: 'confidence',
       width: 110,
-      sorter: (a: any, b: any) => a.confidence - b.confidence,
+      sorter: (a: PredictionRow, b: PredictionRow) => a.confidence - b.confidence,
       render: (v: number) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{
@@ -240,7 +254,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
         { text: 'Correct', value: true },
         { text: 'Wrong', value: false },
       ],
-      onFilter: (value: any, record: any) => record.correct === value,
+      onFilter: (value: boolean | React.Key, record: PredictionRow) => record.correct === value,
       render: (v: boolean) => (
         <Tag color={v ? 'success' : 'error'}>{v ? 'Correct' : 'Wrong'}</Tag>
       ),
@@ -324,7 +338,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
 
       {/* Table */}
       <Table
-        columns={columns as any}
+        columns={columns}
         dataSource={filteredData}
         size="small"
         pagination={{
@@ -335,7 +349,7 @@ export default function PredictionTable({ dataset }: PredictionTableProps) {
           onShowSizeChange: (_, size) => setPageSize(size),
         }}
         scroll={{ x: 'max-content' }}
-        rowClassName={(record: any) => record.correct ? '' : 'ant-table-row-wrong'}
+        rowClassName={(record: PredictionRow) => record.correct ? '' : 'ant-table-row-wrong'}
       />
     </Card>
   );

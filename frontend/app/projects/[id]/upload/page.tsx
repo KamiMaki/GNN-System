@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Button, Card, Input, Space, Alert, Spin, Tag, Divider, Row, Col, Typography, theme } from 'antd';
+import { sanitizeParam } from '@/lib/sanitize';
+import { Button, Card, Input, Space, Alert, Tag, Divider, Row, Col, Typography, theme } from 'antd';
 import {
     CloudUploadOutlined, FolderOpenOutlined, ExperimentOutlined,
     CheckCircleOutlined, FileTextOutlined, DownloadOutlined,
@@ -69,7 +70,7 @@ function analyzeFiles(files: File[]): { graphs: GraphInfo[]; isFlat: boolean } {
 export default function UploadPage() {
     const params = useParams();
     const router = useRouter();
-    const projectId = params.id as string;
+    const projectId = sanitizeParam(params.id);
     const { token } = theme.useToken();
     const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -109,8 +110,8 @@ export default function UploadPage() {
         try {
             await uploadProjectFolder(projectId, selectedFiles, datasetName);
             router.push(`/projects/${projectId}/explore`);
-        } catch (err: any) {
-            setError(err.message || 'Upload failed');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Upload failed');
         } finally {
             setUploading(false);
         }
@@ -122,8 +123,8 @@ export default function UploadPage() {
         try {
             await loadDemoData(projectId, demoId);
             router.push(`/projects/${projectId}/explore`);
-        } catch (err: any) {
-            setError(err.message || 'Failed to load demo data');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Failed to load demo data');
         } finally {
             setLoadingDemoId(null);
         }
@@ -208,7 +209,7 @@ export default function UploadPage() {
                     <input
                         ref={folderInputRef}
                         type="file"
-                        // @ts-ignore
+                        // @ts-expect-error webkitdirectory is a non-standard attribute
                         webkitdirectory=""
                         directory=""
                         multiple

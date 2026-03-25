@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Card, Tag, Descriptions, Typography, Empty, Space, Divider, theme } from 'antd';
-import { EyeOutlined, NodeIndexOutlined } from '@ant-design/icons';
+import { Tag, Descriptions, Typography, Empty, Divider, theme } from 'antd';
+import { NodeIndexOutlined } from '@ant-design/icons';
 import dynamic from 'next/dynamic';
-import type { GraphSampleData, GraphSampleNode, GraphSampleEdge } from '@/lib/api';
+import type { GraphSampleData, GraphSampleNode } from '@/lib/api';
 
 const { Text } = Typography;
 
@@ -81,15 +81,15 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
     );
   }, [graphSample, detailNode]);
 
-  const handleNodeClick = useCallback((node: any) => {
+  const handleNodeClick = useCallback((node: { id: string }) => {
     setSelectedNodeId((prev: string | null) => prev === node.id ? null : node.id);
   }, []);
 
-  const handleNodeHover = useCallback((node: any) => {
+  const handleNodeHover = useCallback((node: { id: string } | null) => {
     setHoveredNodeId(node ? node.id : null);
   }, []);
 
-  const nodeCanvasObject = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+  const nodeCanvasObject = useCallback((node: { id: string; x: number; y: number; color?: string; label?: string }, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const size = 5;
     const isSelected = node.id === selectedNodeId;
     const isHovered = node.id === hoveredNodeId;
@@ -116,8 +116,6 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
     }
   }, [selectedNodeId, hoveredNodeId, token.colorText]);
 
-  if (!graphSample.nodes.length) return <Empty description="No graph data available" />;
-
   // Collect unique cell types for legend
   const cellTypesInGraph = useMemo(() => {
     const set = new Set<string>();
@@ -127,6 +125,8 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
     });
     return Array.from(set).sort();
   }, [graphSample]);
+
+  if (!graphSample.nodes.length) return <Empty description="No graph data available" />;
 
   return (
     <>
@@ -164,7 +164,7 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
             width={Math.max(300, containerWidth - 2)}
             height={418}
             nodeCanvasObject={nodeCanvasObject}
-            nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+            nodePointerAreaPaint={(node: { x: number; y: number }, color: string, ctx: CanvasRenderingContext2D) => {
               ctx.beginPath();
               ctx.arc(node.x, node.y, 7, 0, 2 * Math.PI);
               ctx.fillStyle = color;
