@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession, signIn, signOut } from 'next-auth/react';
+import { isKeycloakMode } from '@/lib/auth-mode';
 
 interface User {
     id: string;
@@ -29,15 +31,53 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+// ── Keycloak mode: delegates to NextAuth session ──
+
+function KeycloakAuthProvider({ children }: { children: React.ReactNode }) {
+    const { data: session, status } = useSession();
+    const router = useRouter();
+
+    const user: User | null = session?.user
+        ? {
+              id: session.user.id ?? '',
+              name: session.user.name ?? '',
+              email: session.user.email ?? '',
+              role: (session.user as Record<string, unknown>).role as string ?? '',
+              avatar: session.user.image ?? undefined,
+          }
+        : null;
+
+    const login = async () => {
+        await signIn('keycloak');
+    };
+
+    const logout = () => {
+        signOut({ redirectTo: '/login' });
+    };
+
+    return (
+        <AuthContext.Provider
+            value={{
+                user,
+                isLoading: status === 'loading',
+                initialized: status !== 'loading',
+                login,
+                logout,
+            }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
+}
+
+// ── Mock mode: existing localStorage-based auth ──
+
+function MockAuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [initialized, setInitialized] = useState(false);
     const router = useRouter();
 
-    // Simulate session check - initialize from localStorage synchronously
-    // Using a ref + state initializer would be better, but keeping the existing
-    // structure and using a layout effect pattern to avoid cascading renders.
     useEffect(() => {
         try {
             const storedUser = localStorage.getItem('mock_user');
@@ -50,8 +90,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     typeof (parsed as Record<string, unknown>).name === 'string' &&
                     typeof (parsed as Record<string, unknown>).email === 'string'
                 ) {
-                    // Safe: validated shape matches User interface
-                    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing from localStorage on mount
                     setUser(parsed as User);
                 } else {
                     localStorage.removeItem('mock_user');
@@ -65,7 +103,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const login = async () => {
         setIsLoading(true);
-        // Simulate API call
         await new Promise(resolve => setTimeout(resolve, 800));
 
         const mockUser: User = {
@@ -93,4 +130,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             {children}
         </AuthContext.Provider>
     );
+}
+
+// ── Unified provider: picks based on AUTH_MODE ──
+
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+    if (isKeycloakMode) {
+        return <KeycloakAuthProvider>{children}</KeycloakAuthProvider>;
+    }
+    return <MockAuthProvider>{children}</MockAuthProvider>;
 };

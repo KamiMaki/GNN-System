@@ -2,6 +2,21 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider, useAuth } from '../AuthContext';
 
+// Mock next-auth/react (ESM module)
+jest.mock('next-auth/react', () => ({
+  useSession: () => ({ data: null, status: 'unauthenticated' }),
+  signIn: jest.fn(),
+  signOut: jest.fn(),
+  SessionProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+// Mock auth-mode to always use mock mode in tests
+jest.mock('@/lib/auth-mode', () => ({
+  AUTH_MODE: 'mock',
+  isKeycloakMode: false,
+  isMockMode: true,
+}));
+
 // Mock next/navigation
 const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({

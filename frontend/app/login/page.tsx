@@ -1,24 +1,36 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { isKeycloakMode } from '@/lib/auth-mode';
 import { Card, Button, Input, Radio, Checkbox, Divider, Typography, Space, theme } from 'antd';
-import { SafetyOutlined, BankOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { SafetyOutlined, BankOutlined, ThunderboltOutlined, KeyOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
 
 const { Title, Text, Link } = Typography;
 
 export default function LoginPage() {
-    const { login, isLoading } = useAuth();
+    const { login, isLoading, user } = useAuth();
     const { token } = theme.useToken();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [ssoProvider, setSsoProvider] = useState('ldap');
     const [rememberMe, setRememberMe] = useState(false);
 
+    // In keycloak mode, if user is already logged in, redirect to dashboard
+    useEffect(() => {
+        if (isKeycloakMode && user) {
+            window.location.href = '/dashboard';
+        }
+    }, [user]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        await login();
+    };
+
+    const handleKeycloakLogin = async () => {
         await login();
     };
 
@@ -167,6 +179,28 @@ export default function LoginPage() {
                                 </Button>
                             </Space>
                         </form>
+
+                        {isKeycloakMode && (
+                            <>
+                                <Divider style={{ margin: '4px 0' }}>
+                                    <Text type="secondary" style={{ fontSize: 11 }}>OR</Text>
+                                </Divider>
+                                <Button
+                                    block
+                                    size="large"
+                                    icon={<KeyOutlined />}
+                                    onClick={handleKeycloakLogin}
+                                    loading={isLoading}
+                                    style={{
+                                        height: 44,
+                                        borderRadius: 10,
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    Sign in with Keycloak SSO
+                                </Button>
+                            </>
+                        )}
 
                         <Divider style={{ margin: '4px 0' }} />
                         <Space size={4}>
