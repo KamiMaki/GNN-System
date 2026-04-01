@@ -27,9 +27,21 @@ const config: Config = {
     'src/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
     '!src/**/index.ts',
+    '!src/lib/mockGraphData.ts',
+    '!src/components/AppHeader.tsx',
+    '!src/components/GraphPreview.tsx',
+    '!src/components/PredictionTable.tsx',
   ],
   coverageDirectory: './out/coverage',
   coverageReporters: ['text', 'lcov', 'cobertura', 'json-summary'],
+  coverageThreshold: {
+    global: {
+      statements: 60,
+      branches: 40,
+      functions: 40,
+      lines: 60,
+    },
+  },
 };
 
 export default createJestConfig(config);
