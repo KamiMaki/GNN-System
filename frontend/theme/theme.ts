@@ -5,7 +5,7 @@ import { theme as antdTheme } from 'antd';
 export const getTheme = (mode: 'light' | 'dark'): ThemeConfig => ({
   algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
   token: {
-    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    fontFamily: 'var(--font-noto-sans-tc), "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     borderRadius: 10,
     colorPrimary: '#0891b2',
     colorSuccess: '#10b981',

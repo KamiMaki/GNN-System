@@ -1,6 +1,14 @@
 import type { Metadata } from "next";
+import { Noto_Sans_TC } from "next/font/google";
 import ClientProviders from "@/components/ClientProviders";
 import "./globals.css";
+
+const notoSansTC = Noto_Sans_TC({
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  display: "swap",
+  variable: "--font-noto-sans-tc",
+});
 
 export const metadata: Metadata = {
   title: "GraphX.AI",
@@ -14,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="zh-TW" className={notoSansTC.variable}>
       <body>
         <ClientProviders>
           <main style={{ minHeight: '100vh' }}>

@@ -28,6 +28,7 @@ const config: Config = {
     '!**/*.d.ts',
     '!**/index.ts',
     '!lib/mockGraphData.ts',
+    '!lib/auth.ts',
     '!components/AppHeader.tsx',
     '!components/GraphPreview.tsx',
     '!components/PredictionTable.tsx',
