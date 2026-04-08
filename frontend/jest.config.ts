@@ -9,7 +9,7 @@ const config: Config = {
   testEnvironment: 'jest-environment-jsdom',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
+    '^@/(.*)$': '<rootDir>/$1',
   },
   testMatch: ['**/*.{test,spec}.{ts,tsx}'],
   // Test report XML output
@@ -24,13 +24,13 @@ const config: Config = {
   ],
   // Coverage configuration
   collectCoverageFrom: [
-    'src/**/*.{ts,tsx}',
-    '!src/**/*.d.ts',
-    '!src/**/index.ts',
-    '!src/lib/mockGraphData.ts',
-    '!src/components/AppHeader.tsx',
-    '!src/components/GraphPreview.tsx',
-    '!src/components/PredictionTable.tsx',
+    '{components,contexts,lib,theme}/**/*.{ts,tsx}',
+    '!**/*.d.ts',
+    '!**/index.ts',
+    '!lib/mockGraphData.ts',
+    '!components/AppHeader.tsx',
+    '!components/GraphPreview.tsx',
+    '!components/PredictionTable.tsx',
   ],
   coverageDirectory: './out/coverage',
   coverageReporters: ['text', 'lcov', 'cobertura', 'json-summary'],
