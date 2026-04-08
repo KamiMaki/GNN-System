@@ -2,10 +2,10 @@
 
 import React, { useState } from 'react';
 import {
-    Button, Avatar, Dropdown, Breadcrumb, Steps, Divider, Tag, Typography, theme, Grid, Drawer, Space,
+    Button, Avatar, Breadcrumb, Steps, Divider, Tag, Typography, theme, Grid, Drawer, Space,
 } from 'antd';
 import {
-    UserOutlined, SettingOutlined, LogoutOutlined,
+    UserOutlined, LogoutOutlined,
     SunOutlined, MoonOutlined, MenuOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -66,29 +66,6 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
         router.push(STEP_PATHS(projectId)[index]);
     };
 
-    const userMenuItems = user ? {
-        items: [
-            {
-                key: 'header',
-                label: (
-                    <div>
-                        <div style={{ fontWeight: 700 }}>{user.name}</div>
-                        <div style={{ fontSize: 12, opacity: 0.6 }}>{user.email}</div>
-                    </div>
-                ),
-                disabled: true,
-            },
-            { type: 'divider' as const },
-            { key: 'profile', label: 'Profile', icon: <UserOutlined /> },
-            { key: 'settings', label: 'Settings', icon: <SettingOutlined /> },
-            { type: 'divider' as const },
-            { key: 'logout', label: 'Logout', icon: <LogoutOutlined />, danger: true },
-        ],
-        onClick: ({ key }: { key: string }) => {
-            if (key === 'logout') logout();
-        },
-    } : { items: [] };
-
     const logoSection = (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             <Image src="/graphx-icon.svg" alt="GraphX.AI" width={32} height={32} style={{ borderRadius: 8 }} />
@@ -119,20 +96,25 @@ export default function AppHeader({ subtitle, projectName, projectId, projectSte
             {user && (
                 <>
                     <Divider type="vertical" style={{ height: 28, margin: '0 4px' }} />
+                    <Avatar
+                        src={user.avatar}
+                        alt={user.name}
+                        size={34}
+                        style={{
+                            border: `2px solid ${token.colorPrimary}30`,
+                        }}
+                        icon={<UserOutlined />}
+                    />
                     <Text strong style={{ fontSize: 13 }}>{user.name}</Text>
-                    <Dropdown menu={userMenuItems} trigger={['click']} placement="bottomRight">
-                        <Avatar
-                            src={user.avatar}
-                            alt={user.name}
-                            size={34}
-                            style={{
-                                cursor: 'pointer',
-                                border: `2px solid ${token.colorPrimary}30`,
-                                transition: 'border-color 0.2s',
-                            }}
-                            icon={<UserOutlined />}
-                        />
-                    </Dropdown>
+                    <Button
+                        type="text"
+                        danger
+                        icon={<LogoutOutlined />}
+                        onClick={logout}
+                        style={{ borderRadius: 8 }}
+                    >
+                        Logout
+                    </Button>
                 </>
             )}
         </div>

@@ -1,40 +1,26 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { AuthProvider, useAuth } from '../AuthContext';
 
-// Mock next-auth/react (ESM module)
+// Mock next-auth/react
+const mockSignIn = jest.fn();
+const mockSignOut = jest.fn();
+let mockSession: { user?: { id?: string; name?: string; email?: string; image?: string } } | null = null;
+let mockStatus = 'unauthenticated';
+
 jest.mock('next-auth/react', () => ({
-  useSession: () => ({ data: null, status: 'unauthenticated' }),
-  signIn: jest.fn(),
-  signOut: jest.fn(),
+  useSession: () => ({ data: mockSession, status: mockStatus }),
+  signIn: (...args: unknown[]) => mockSignIn(...args),
+  signOut: (...args: unknown[]) => mockSignOut(...args),
   SessionProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-// Mock auth-mode to always use mock mode in tests
-jest.mock('@/lib/auth-mode', () => ({
-  AUTH_MODE: 'mock',
-  isKeycloakMode: false,
-  isMockMode: true,
-}));
-
 // Mock next/navigation
-const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
   usePathname: () => '/',
 }));
 
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: jest.fn((key: string) => store[key] ?? null),
-    setItem: jest.fn((key: string, value: string) => { store[key] = value; }),
-    removeItem: jest.fn((key: string) => { delete store[key]; }),
-    clear: jest.fn(() => { store = {}; }),
-  };
-})();
-Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+import { AuthProvider, useAuth } from '../AuthContext';
 
 function TestConsumer() {
   const { user, isLoading, initialized, login, logout } = useAuth();
@@ -49,26 +35,27 @@ function TestConsumer() {
   );
 }
 
-describe('AuthContext', () => {
+describe('AuthContext (Keycloak)', () => {
   beforeEach(() => {
-    localStorageMock.clear();
-    mockPush.mockClear();
+    mockSession = null;
+    mockStatus = 'unauthenticated';
+    mockSignIn.mockClear();
+    mockSignOut.mockClear();
   });
 
-  it('initializes with no user', async () => {
+  it('shows no user when unauthenticated', () => {
     render(
       <AuthProvider>
         <TestConsumer />
       </AuthProvider>
     );
 
-    expect(await screen.findByText('null')).toBeInTheDocument();
+    expect(screen.getByTestId('user')).toHaveTextContent('null');
     expect(screen.getByTestId('initialized')).toHaveTextContent('true');
   });
 
-  it('restores user from localStorage', async () => {
-    const storedUser = { id: 'u1', name: 'Stored User', email: 'a@b.com', role: '' };
-    localStorageMock.setItem('mock_user', JSON.stringify(storedUser));
+  it('shows loading state', () => {
+    mockStatus = 'loading';
 
     render(
       <AuthProvider>
@@ -76,10 +63,27 @@ describe('AuthContext', () => {
       </AuthProvider>
     );
 
-    expect(await screen.findByText('Stored User')).toBeInTheDocument();
+    expect(screen.getByTestId('loading')).toHaveTextContent('true');
+    expect(screen.getByTestId('initialized')).toHaveTextContent('false');
   });
 
-  it('login sets user and navigates to dashboard', async () => {
+  it('provides user from session', () => {
+    mockSession = {
+      user: { id: 'kc-001', name: 'Keycloak User', email: 'kc@test.com', image: 'https://example.com/avatar.png' },
+    };
+    mockStatus = 'authenticated';
+
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>
+    );
+
+    expect(screen.getByTestId('user')).toHaveTextContent('Keycloak User');
+    expect(screen.getByTestId('initialized')).toHaveTextContent('true');
+  });
+
+  it('login calls signIn with keycloak', async () => {
     const user = userEvent.setup();
     render(
       <AuthProvider>
@@ -88,15 +92,14 @@ describe('AuthContext', () => {
     );
 
     await user.click(screen.getByText('Login'));
-
-    expect(await screen.findByText('Alex Chen')).toBeInTheDocument();
-    expect(mockPush).toHaveBeenCalledWith('/dashboard');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('mock_user', expect.any(String));
+    expect(mockSignIn).toHaveBeenCalledWith('keycloak');
   });
 
-  it('logout clears user and navigates to login', async () => {
-    const storedUser = { id: 'u1', name: 'Test', email: 'a@b.com', role: '' };
-    localStorageMock.setItem('mock_user', JSON.stringify(storedUser));
+  it('logout calls signOut with redirect to login', async () => {
+    mockSession = {
+      user: { id: 'kc-001', name: 'Test', email: 'a@b.com' },
+    };
+    mockStatus = 'authenticated';
 
     const user = userEvent.setup();
     render(
@@ -105,11 +108,7 @@ describe('AuthContext', () => {
       </AuthProvider>
     );
 
-    await screen.findByText('Test');
     await user.click(screen.getByText('Logout'));
-
-    expect(screen.getByTestId('user')).toHaveTextContent('null');
-    expect(mockPush).toHaveBeenCalledWith('/login');
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('mock_user');
+    expect(mockSignOut).toHaveBeenCalledWith({ redirectTo: '/login' });
   });
 });

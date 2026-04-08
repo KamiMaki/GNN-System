@@ -6,7 +6,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import ThemeRegistry from '@/components/ThemeRegistry';
 import AuthGuard from '@/components/AuthGuard';
-import { isKeycloakMode } from '@/lib/auth-mode';
 
 function AuthStack({ children }: { children: React.ReactNode }) {
     return (
@@ -21,16 +20,11 @@ function AuthStack({ children }: { children: React.ReactNode }) {
 }
 
 export default function ClientProviders({ children }: { children: React.ReactNode }) {
-    const inner = (
-        <ThemeRegistry>
-            <AuthStack>{children}</AuthStack>
-        </ThemeRegistry>
+    return (
+        <SessionProvider>
+            <ThemeRegistry>
+                <AuthStack>{children}</AuthStack>
+            </ThemeRegistry>
+        </SessionProvider>
     );
-
-    // SessionProvider is required for useSession() in keycloak mode
-    if (isKeycloakMode) {
-        return <SessionProvider>{inner}</SessionProvider>;
-    }
-
-    return inner;
 }
