@@ -20,6 +20,11 @@ class DatasetSummary(BaseModel):
     is_directed: bool
     task_type: str = "node_classification"
     has_edge_attrs: bool = False
+    # ── Excel schema-driven ingestion (Phase 1) ──
+    # Populated when the dataset originated from an .xlsx template upload.
+    declared_task_type: Optional[str] = None
+    declared_label_column: Optional[str] = None
+    schema_spec: Optional[dict] = None  # ExcelGraphSpec.to_payload(), persisted for Phase 2
 
 
 # ── Generic Explore (new) ──

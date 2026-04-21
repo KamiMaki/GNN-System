@@ -26,6 +26,7 @@ from app.data.feature_engineering import (
     impute_column,
     validate_label,
 )
+from app.data.excel_ingestion import parse_excel_file
 from app.data.ingestion import parse_csv_pair_generic
 from app.data.pyg_converter import dataframes_to_pyg_dynamic
 from app.models.factory import get_model
@@ -712,6 +713,140 @@ async def upload_project_data(
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/sample-excel")
+async def download_sample_excel():
+    """Return the bundled graph_data_template.xlsx for users to fill in."""
+    template_path = Path(__file__).resolve().parent.parent.parent / "graph_data_template.xlsx"
+    if not template_path.exists():
+        raise HTTPException(status_code=404, detail="Excel template not found on server")
+    return StreamingResponse(
+        io.BytesIO(template_path.read_bytes()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=graph_data_template.xlsx"},
+    )
+
+
+@router.post("/{project_id}/upload-excel", response_model=DatasetSummary)
+async def upload_project_excel(
+    project_id: str,
+    file: UploadFile = File(...),
+    dataset_name: str = Form(default=""),
+):
+    """Upload a graph_data_template.xlsx file (Phase 1 of Excel ingestion).
+
+    The Parameter sheet declares features (X) and labels (Y). Task type and
+    label column are auto-detected from the spec; the frontend confirm step is
+    pre-filled and may be skipped.
+    """
+    _project_or_404(project_id)
+    content = await file.read()
+    name = dataset_name or (file.filename or "excel-upload").rsplit(".", 1)[0]
+
+    try:
+        parsed = parse_excel_file(content, name)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    nodes_df = parsed["nodes_df"]
+    edges_df = parsed["edges_df"]
+
+    if nodes_df.empty:
+        raise HTTPException(status_code=422, detail="Node data sheet contains no rows.")
+
+    # node_id must be present & non-null
+    if "node_id" not in nodes_df.columns or nodes_df["node_id"].isna().any():
+        raise HTTPException(
+            status_code=422,
+            detail="Every Node row must have a non-empty node id.",
+        )
+
+    # Reuse the _ingest_single_graph split+explore path by routing through
+    # ingestion bytes is unnecessary — assemble the record directly.
+    import pandas as pd
+
+    num_nodes = len(nodes_df)
+    perm = torch.randperm(num_nodes)
+    split_idx = max(int(num_nodes * 0.8), 1)
+    train_indices = perm[:split_idx].numpy()
+    test_indices = perm[split_idx:].numpy()
+
+    nodes_df_train = nodes_df.iloc[train_indices].reset_index(drop=True)
+    nodes_df_test = nodes_df.iloc[test_indices].reset_index(drop=True)
+
+    if not edges_df.empty and "src_id" in edges_df.columns and "dst_id" in edges_df.columns:
+        train_ids = set(nodes_df_train["node_id"].values)
+        test_ids = set(nodes_df_test["node_id"].values)
+        edges_df_train = edges_df[
+            edges_df["src_id"].isin(train_ids) & edges_df["dst_id"].isin(train_ids)
+        ].reset_index(drop=True)
+        edges_df_test = edges_df[
+            edges_df["src_id"].isin(test_ids) & edges_df["dst_id"].isin(test_ids)
+        ].reset_index(drop=True)
+    else:
+        edges_df_train = edges_df.copy() if not edges_df.empty else pd.DataFrame(columns=["src_id", "dst_id"])
+        edges_df_test = pd.DataFrame(columns=edges_df_train.columns)
+
+    explore_stats = compute_generic_explore(nodes_df_train, edges_df_train)
+    num_features = len([c for c in explore_stats["columns"] if c["dtype"] == "numeric"])
+
+    dataset_id = str(uuid.uuid4())
+    task_type = parsed["task_type"]
+    label_column = parsed["label_column"]
+    schema_payload = parsed["spec"].to_payload()
+
+    ds_record = {
+        "dataset_id": dataset_id,
+        "name": name,
+        "num_nodes": num_nodes,
+        "num_edges": len(edges_df),
+        "num_features": num_features,
+        "num_classes": 0,
+        "is_directed": True,
+        "task_type": task_type,
+        "nodes_df_train": nodes_df_train,
+        "nodes_df_test": nodes_df_test,
+        "edges_df_train": edges_df_train,
+        "edges_df_test": edges_df_test,
+        "explore_stats": explore_stats,
+        # Persist declared schema for Phase 2 consumption.
+        "declared_task_type": task_type,
+        "declared_label_column": label_column,
+        "schema_spec": schema_payload,
+        "label_weight": parsed["label_weight"],
+    }
+    store.put_dataset(dataset_id, ds_record)
+
+    project = store.get_project(project_id)
+    ds_ids = project.get("dataset_ids", [])
+    if dataset_id not in ds_ids:
+        ds_ids.append(dataset_id)
+    # task + label already declared → jump straight to step 3 (data_confirmed).
+    store.update_project(
+        project_id,
+        dataset_id=dataset_id,
+        dataset_ids=ds_ids,
+        task_type=task_type,
+        label_column=label_column,
+        current_step=3,
+        status="data_confirmed",
+        updated_at=_now_iso(),
+    )
+
+    return DatasetSummary(
+        dataset_id=dataset_id,
+        name=name,
+        num_nodes=num_nodes,
+        num_edges=len(edges_df),
+        num_features=num_features,
+        num_classes=0,
+        is_directed=True,
+        task_type=task_type,
+        declared_task_type=task_type,
+        declared_label_column=label_column,
+        schema_spec=schema_payload,
+    )
 
 
 @router.post("/{project_id}/upload-folder", response_model=DatasetSummary)
