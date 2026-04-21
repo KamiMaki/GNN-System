@@ -7,11 +7,13 @@ import { Button, Card, Input, Space, Alert, Tag, Divider, Row, Col, Typography, 
 import {
     CloudUploadOutlined, FolderOpenOutlined, ExperimentOutlined,
     CheckCircleOutlined, FileTextOutlined, DownloadOutlined,
+    FileExcelOutlined,
 } from '@ant-design/icons';
 
 import {
     uploadProjectFolder, loadDemoData, downloadSampleData,
     listDemoDatasets, DemoDatasetInfo,
+    uploadProjectExcel, downloadSampleExcel,
 } from '@/lib/api';
 
 const { Title, Text } = Typography;
@@ -78,9 +80,11 @@ export default function UploadPage() {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [graphInfos, setGraphInfos] = useState<GraphInfo[]>([]);
     const [uploading, setUploading] = useState(false);
+    const [excelUploading, setExcelUploading] = useState(false);
     const [loadingDemoId, setLoadingDemoId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [demos, setDemos] = useState<DemoDatasetInfo[]>([]);
+    const excelInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         listDemoDatasets().then(setDemos).catch(console.error);
@@ -117,6 +121,23 @@ export default function UploadPage() {
         }
     };
 
+    const handleExcelSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setError(null);
+        setExcelUploading(true);
+        try {
+            await uploadProjectExcel(projectId, file, datasetName);
+            // Task + label already declared in the Parameter sheet → skip confirm step.
+            router.push(`/projects/${projectId}/explore`);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Excel upload failed');
+        } finally {
+            setExcelUploading(false);
+            if (excelInputRef.current) excelInputRef.current.value = '';
+        }
+    };
+
     const handleLoadDemo = async (demoId: string) => {
         setLoadingDemoId(demoId);
         setError(null);
@@ -130,7 +151,7 @@ export default function UploadPage() {
         }
     };
 
-    const isLoading = uploading || loadingDemoId !== null;
+    const isLoading = uploading || excelUploading || loadingDemoId !== null;
 
     return (
         <div style={{ maxWidth: 800, margin: '0 auto', padding: '40px 24px' }}>
@@ -182,6 +203,63 @@ export default function UploadPage() {
                 </Card>
 
                 <Divider>OR UPLOAD YOUR DATA</Divider>
+
+                {/* Excel Template Upload (Preferred) */}
+                <Card
+                    data-testid="excel-upload-card"
+                    title={
+                        <Space>
+                            <FileExcelOutlined style={{ color: token.colorSuccess }} />
+                            Upload Excel Template
+                            <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
+                                Schema-driven — task type & label column auto-detected
+                            </Text>
+                        </Space>
+                    }
+                    extra={
+                        <Button
+                            href={downloadSampleExcel()}
+                            download
+                            icon={<DownloadOutlined />}
+                            size="small"
+                        >
+                            Download Template
+                        </Button>
+                    }
+                >
+                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
+                            Fill in the <code>Parameter</code> sheet to declare features (X) and labels (Y),
+                            then fill the <code>Node_*</code> / <code>Edge_*</code> / <code>Graph_*</code> sheets with data.
+                            Phase 1 supports single-level Y (Node or Graph) and single Type per Level.
+                        </Text>
+                        <input
+                            ref={excelInputRef}
+                            type="file"
+                            accept=".xlsx"
+                            onChange={handleExcelSelect}
+                            style={{ display: 'none' }}
+                            data-testid="excel-file-input"
+                        />
+                        <Button
+                            type="primary"
+                            icon={<FileExcelOutlined />}
+                            size="large"
+                            loading={excelUploading}
+                            disabled={isLoading}
+                            onClick={() => excelInputRef.current?.click()}
+                            block
+                        >
+                            {excelUploading ? 'Uploading Excel...' : 'Select .xlsx File'}
+                        </Button>
+                    </Space>
+                </Card>
+
+                <Divider plain>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        Or use legacy CSV folder upload
+                    </Text>
+                </Divider>
 
                 {/* Dataset Name */}
                 <Input

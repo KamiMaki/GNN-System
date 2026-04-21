@@ -12,6 +12,22 @@ export interface DatasetSummary {
   is_directed: boolean;
   task_type: string;
   has_edge_attrs?: boolean;
+  // Phase 1 Excel ingestion: populated when dataset came from a .xlsx template.
+  declared_task_type?: string;
+  declared_label_column?: string;
+  schema_spec?: ExcelSchemaSpec;
+}
+
+export interface ExcelSchemaEntry {
+  xy: 'X' | 'Y';
+  level: 'Node' | 'Edge' | 'Graph';
+  type: string;
+  parameter: string;
+  weight: number | null;
+}
+
+export interface ExcelSchemaSpec {
+  entries: ExcelSchemaEntry[];
 }
 
 export interface DemoDatasetInfo {
@@ -553,6 +569,30 @@ export const getExperimentReport = async (projectId: string, taskId: string): Pr
   const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/report/${taskId}`);
   if (!res.ok) throw new Error('Failed to get experiment report');
   return res.json();
+};
+
+export const uploadProjectExcel = async (
+  projectId: string,
+  file: File,
+  datasetName: string = '',
+): Promise<DatasetSummary> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (datasetName) formData.append('dataset_name', datasetName);
+
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/upload-excel`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Excel upload failed: ${res.statusText}`);
+  }
+  return res.json();
+};
+
+export const downloadSampleExcel = (): string => {
+  return `${API_BASE}/api/v1/projects/sample-excel`;
 };
 
 export const uploadProjectFolder = async (
