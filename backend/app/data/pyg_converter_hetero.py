@@ -15,6 +15,11 @@ import pandas as pd
 import torch
 from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import HeteroData
+import torch_geometric.transforms as T
+
+# Shared ToUndirected transform — appends a reverse edge for every relation
+# so node types without incoming edges still receive messages under to_hetero().
+_TO_UNDIRECTED = T.ToUndirected(merge=False)
 
 
 def _numeric_feature_columns(df: pd.DataFrame, exclude: set[str]) -> list[str]:
@@ -102,6 +107,8 @@ def _build_single_hetero(
     y_val = row[label_column].iloc[0]
     data.y = torch.tensor([float(y_val)], dtype=torch.float)
 
+    # Append reverse edges so every node type appears as a destination.
+    data = _TO_UNDIRECTED(data)
     return data
 
 

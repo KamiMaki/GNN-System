@@ -76,9 +76,10 @@ def _prepare_hetero(dataset: dict) -> tuple[list, list, tuple, int]:
         "label_column": dataset["label_column"],
         "canonical_edges": dataset["canonical_edges"],
     }
-    data_list, _scalers, _fnames, canonical_edges = parsed_excel_to_hetero_list(parsed)
-    node_types = sorted(dataset["node_dfs"].keys())
-    metadata = (node_types, canonical_edges)
+    data_list, _scalers, _fnames, _canonical_edges = parsed_excel_to_hetero_list(parsed)
+    # Pull metadata from the actual (post-ToUndirected) HeteroData so to_hetero
+    # sees every relation including the auto-added reverse edges.
+    metadata = data_list[0].metadata()
     num_classes = 1 if dataset["task_type"].endswith("regression") else 2
     train, test = _split_list(data_list)
     return train, test, metadata, num_classes

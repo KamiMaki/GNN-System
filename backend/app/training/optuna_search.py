@@ -6,7 +6,7 @@ import torch
 from typing import Optional
 
 from app.core import store
-from app.models.factory import get_model, MODEL_REGISTRY
+from app.models.factory import get_model, HOMO_REGISTRY as MODEL_REGISTRY
 
 
 def run_hpo(
