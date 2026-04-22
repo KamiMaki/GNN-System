@@ -13,6 +13,12 @@ const ForceGraph2D = dynamic(
   { ssr: false },
 );
 
+// 10-colour palette cycled by node_type for heterogeneous graphs.
+const HETERO_PALETTE = [
+  '#0891b2', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899',
+  '#84cc16', '#a855f7', '#14b8a6', '#ef4444', '#3b82f6',
+];
+
 const CELL_TYPE_COLORS: Record<string, string> = {
   INV: '#06b6d4', NAND2: '#0891b2', NOR2: '#0e7490', BUF: '#10b981',
   DFF: '#8b5cf6', MUX2: '#ec4899', AOI21: '#f59e0b', XOR2: '#84cc16',
@@ -20,10 +26,29 @@ const CELL_TYPE_COLORS: Record<string, string> = {
   Logic: '#0891b2', Buffer: '#10b981', Register: '#8b5cf6', Port: '#f59e0b',
 };
 
-function getNodeColor(node: GraphSampleNode): string {
+function colorForType(typeName: string, index: number): string {
+  return HETERO_PALETTE[index % HETERO_PALETTE.length];
+}
+
+function buildTypeColorMap(nodes: GraphSampleNode[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const seen: string[] = [];
+  for (const n of nodes) {
+    const t = (n.node_type as string) || '';
+    if (!t || seen.includes(t)) continue;
+    seen.push(t);
+    out[t] = colorForType(t, seen.length - 1);
+  }
+  return out;
+}
+
+function getNodeColor(node: GraphSampleNode, typeColors: Record<string, string>): string {
+  // 1. Heterogeneous: colour by node_type
+  const nt = (node.node_type as string) || '';
+  if (nt && typeColors[nt]) return typeColors[nt];
+  // 2. Legacy homogeneous with cell_type attribute
   const ct = (node.attributes.cell_type as string) || '';
   if (ct && CELL_TYPE_COLORS[ct]) return CELL_TYPE_COLORS[ct];
-  // Fallback: hash the id for a consistent color
   return '#0891b2';
 }
 
@@ -49,11 +74,13 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
     return () => observer.disconnect();
   }, []);
 
+  const typeColors = useMemo(() => buildTypeColorMap(graphSample.nodes), [graphSample.nodes]);
+
   const graphData = useMemo(() => {
     const nodes = graphSample.nodes.map(n => ({
       id: String(n.id),
       label: n.label,
-      color: getNodeColor(n),
+      color: getNodeColor(n, typeColors),
       _data: n,
     }));
     const nodeIdSet = new Set(nodes.map(n => n.id));
@@ -120,13 +147,26 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
     }
   }, [selectedNodeId, hoveredNodeId, token.colorText]);
 
-  // Collect unique cell types for legend
+  // Legend — prefer node_type (heterogeneous), fall back to cell_type.
+  const nodeTypesInGraph = useMemo(() => {
+    const set = new Set<string>();
+    graphSample.nodes.forEach(n => { if (n.node_type) set.add(n.node_type as string); });
+    return Array.from(set).sort();
+  }, [graphSample]);
+
   const cellTypesInGraph = useMemo(() => {
+    if (nodeTypesInGraph.length > 0) return [];  // hetero mode — cell_type legend suppressed
     const set = new Set<string>();
     graphSample.nodes.forEach(n => {
       const ct = n.attributes.cell_type as string;
       if (ct) set.add(ct);
     });
+    return Array.from(set).sort();
+  }, [graphSample, nodeTypesInGraph]);
+
+  const edgeTypesInGraph = useMemo(() => {
+    const set = new Set<string>();
+    graphSample.edges.forEach(e => { if (e.edge_type) set.add(e.edge_type as string); });
     return Array.from(set).sort();
   }, [graphSample]);
 
@@ -141,6 +181,24 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
       </div>
 
       {/* Legend */}
+      {nodeTypesInGraph.length > 0 && (
+        <div data-testid="hetero-legend" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
+          <Text type="secondary" style={{ fontSize: 11 }}>Node types:</Text>
+          {nodeTypesInGraph.map(nt => (
+            <Tag key={`nt-${nt}`} style={{ fontSize: 11, background: typeColors[nt], color: '#fff', border: 'none' }}>
+              {nt}
+            </Tag>
+          ))}
+          {edgeTypesInGraph.length > 0 && (
+            <>
+              <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>Edge types:</Text>
+              {edgeTypesInGraph.map(et => (
+                <Tag key={`et-${et}`} style={{ fontSize: 11 }}>{et}</Tag>
+              ))}
+            </>
+          )}
+        </div>
+      )}
       {cellTypesInGraph.length > 0 && (
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
           {cellTypesInGraph.map(ct => (

@@ -242,26 +242,86 @@ export default function ExplorePage() {
                         Explore your data, handle missing values, and configure the learning task.
                     </Text>
                 </div>
-                <Tag icon={<CheckCircleOutlined />} color="blue" style={{ fontSize: 13, padding: '4px 12px' }}>
-                    {exploreData.num_nodes.toLocaleString()} nodes / {exploreData.num_edges.toLocaleString()} edges
-                </Tag>
+                <Space>
+                    {exploreData.is_heterogeneous && (
+                        <Tag color="purple" style={{ fontSize: 12, padding: '4px 10px' }}>
+                            Heterogeneous
+                        </Tag>
+                    )}
+                    <Tag icon={<CheckCircleOutlined />} color="blue" style={{ fontSize: 13, padding: '4px 12px' }}>
+                        {exploreData.graph_count.toLocaleString()} graph{exploreData.graph_count > 1 ? 's' : ''}
+                        {' · '}
+                        {exploreData.num_nodes.toLocaleString()} nodes / {exploreData.num_edges.toLocaleString()} edges
+                    </Tag>
+                </Space>
             </div>
 
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                {/* SECTION I: GRAPH TOPOLOGY */}
-                <Card title="I. Graph Topology">
-                    <Row gutter={16} style={{ marginBottom: 24 }}>
-                        <Col xs={24} sm={12}>
+                {/* SECTION I: DATASET SUMMARY */}
+                <Card title="I. Dataset Summary" data-testid="dataset-summary">
+                    <Row gutter={16} style={{ marginBottom: exploreData.is_heterogeneous ? 16 : 24 }}>
+                        <Col xs={12} sm={6}>
                             <Card size="small" style={{ textAlign: 'center' }}>
-                                <Statistic title="NODES" value={exploreData.num_nodes} />
+                                <Statistic title="GRAPHS" value={exploreData.graph_count} />
                             </Card>
                         </Col>
-                        <Col xs={24} sm={12}>
+                        <Col xs={12} sm={6}>
                             <Card size="small" style={{ textAlign: 'center' }}>
-                                <Statistic title="EDGES" value={exploreData.num_edges} />
+                                <Statistic
+                                    title="AVG NODES / GRAPH"
+                                    value={exploreData.avg_nodes_per_graph}
+                                    precision={1}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} sm={6}>
+                            <Card size="small" style={{ textAlign: 'center' }}>
+                                <Statistic
+                                    title="AVG EDGES / GRAPH"
+                                    value={exploreData.avg_edges_per_graph}
+                                    precision={1}
+                                />
+                            </Card>
+                        </Col>
+                        <Col xs={12} sm={6}>
+                            <Card size="small" style={{ textAlign: 'center' }}>
+                                <Statistic
+                                    title="TOTAL NODES / EDGES"
+                                    value={`${exploreData.num_nodes} / ${exploreData.num_edges}`}
+                                />
                             </Card>
                         </Col>
                     </Row>
+
+                    {exploreData.is_heterogeneous && (
+                        <div data-testid="hetero-summary" style={{
+                            borderTop: `1px solid ${token.colorBorderSecondary}`,
+                            paddingTop: 16, marginBottom: 24,
+                        }}>
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                                <Space wrap>
+                                    <Text strong>Node types ({exploreData.node_types.length}):</Text>
+                                    {exploreData.node_types.map(t => (
+                                        <Tag key={`n-${t}`} color="geekblue">{t}</Tag>
+                                    ))}
+                                </Space>
+                                <Space wrap>
+                                    <Text strong>Edge types ({exploreData.edge_types.length}):</Text>
+                                    {exploreData.canonical_edges.length > 0 ? (
+                                        exploreData.canonical_edges.map((ce, i) => (
+                                            <Tag key={`e-${i}`} color="purple">
+                                                {ce[0]} → {ce[1]} → {ce[2]}
+                                            </Tag>
+                                        ))
+                                    ) : (
+                                        exploreData.edge_types.map(t => (
+                                            <Tag key={`e-${t}`} color="purple">{t}</Tag>
+                                        ))
+                                    )}
+                                </Space>
+                            </Space>
+                        </div>
+                    )}
 
                     <Text strong>Feature Correlation</Text>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', margin: '8px 0 16px' }}>
