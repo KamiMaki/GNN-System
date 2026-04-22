@@ -1,7 +1,12 @@
 'use client';
 
 import React, { createContext, useContext } from 'react';
-import { useSession, signIn, signOut } from 'next-auth/react';
+
+/**
+ * Auth has been removed from this build — the dashboard is directly
+ * accessible. This context is kept as a no-op stub so existing components
+ * (AppHeader, dashboard) that call `useAuth()` continue to compile.
+ */
 
 interface User {
     id: string;
@@ -19,48 +24,33 @@ interface AuthContextType {
     logout: () => void;
 }
 
+const GUEST_USER: User = {
+    id: 'guest',
+    name: 'Guest',
+    email: '',
+    role: 'user',
+};
+
 const AuthContext = createContext<AuthContextType>({
-    user: null,
+    user: GUEST_USER,
     isLoading: false,
-    initialized: false,
+    initialized: true,
     login: async () => { },
     logout: () => { },
 });
 
 export const useAuth = () => useContext(AuthContext);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-    const { data: session, status } = useSession();
-
-    const user: User | null = session?.user
-        ? {
-              id: session.user.id ?? '',
-              name: session.user.name ?? '',
-              email: session.user.email ?? '',
-              role: (session.user as Record<string, unknown>).role as string ?? '',
-              avatar: session.user.image ?? undefined,
-          }
-        : null;
-
-    const login = async () => {
-        await signIn('keycloak');
-    };
-
-    const logout = () => {
-        signOut({ redirectTo: '/login' });
-    };
-
-    return (
-        <AuthContext.Provider
-            value={{
-                user,
-                isLoading: status === 'loading',
-                initialized: status !== 'loading',
-                login,
-                logout,
-            }}
-        >
-            {children}
-        </AuthContext.Provider>
-    );
-};
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => (
+    <AuthContext.Provider
+        value={{
+            user: GUEST_USER,
+            isLoading: false,
+            initialized: true,
+            login: async () => { },
+            logout: () => { },
+        }}
+    >
+        {children}
+    </AuthContext.Provider>
+);
