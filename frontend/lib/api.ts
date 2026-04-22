@@ -215,7 +215,7 @@ export interface Report {
   train_metrics: SplitMetrics;
   val_metrics?: SplitMetrics;
   test_metrics: SplitMetrics;
-  history: Array<{ epoch: number; loss: number; val_loss: number; accuracy?: number }>;
+  history: Array<{ epoch: number; loss: number; val_loss: number; accuracy?: number; lr?: number }>;
   confusion_matrix: ConfusionMatrix | null;
   residual_data?: Array<{ actual: number; predicted: number }>;
   node_predictions?: NodePrediction[];

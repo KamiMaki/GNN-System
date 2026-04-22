@@ -1,12 +1,31 @@
-import optuna
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
-import pytorch_lightning as pl
-import torch
+"""Optuna hyperparameter search with per-trial early stopping."""
+from __future__ import annotations
+
 from typing import Optional
 
-from app.core import store
+import optuna
+import pytorch_lightning as pl
+import torch
+from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
+
+from app.core.config import settings
 from app.models.factory import get_model, HOMO_REGISTRY as MODEL_REGISTRY
+from app.training.callbacks import TrialProgressCallback
+
+
+def _trainer_kwargs(accelerator: str, precision: str) -> dict:
+    return {
+        "max_epochs": settings.MAX_HPO_EPOCHS,
+        "accelerator": accelerator,
+        "devices": 1,
+        "precision": precision,
+        "gradient_clip_val": settings.GRADIENT_CLIP,
+        "enable_progress_bar": False,
+        "enable_model_summary": False,
+        "enable_checkpointing": False,
+        "logger": False,
+    }
 
 
 def run_hpo(
@@ -18,23 +37,20 @@ def run_hpo(
     task_type: str = "node_classification",
     models: Optional[list[str]] = None,
     task_id: Optional[str] = None,
+    accelerator: str = "auto",
+    precision: str = "32-true",
 ) -> dict:
-    """Run Optuna HPO. Returns best hyperparameter dict with trial summary.
+    """Run Optuna HPO. Returns best hyperparameter dict + leaderboard.
 
-    Args:
-        models: List of model names to search over. None or empty = all models.
-        task_id: If provided, updates task store with per-trial progress.
+    Each trial uses an `EarlyStopping` callback on ``val_loss`` so bad
+    configurations abort quickly. The study also uses a ``MedianPruner``.
     """
-
     is_regression = task_type.endswith("regression")
     num_classes = 1 if is_regression else 2
 
-    # Determine which models to search
     available_models = list(MODEL_REGISTRY.keys())
     if models:
-        search_models = [m for m in models if m in available_models]
-        if not search_models:
-            search_models = available_models
+        search_models = [m for m in models if m in available_models] or available_models
     else:
         search_models = available_models
 
@@ -46,13 +62,9 @@ def run_hpo(
         lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
 
         model_kwargs = dict(
-            num_features=num_features,
-            num_classes=num_classes,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            dropout=dropout,
-            lr=lr,
-            task_type=task_type,
+            num_features=num_features, num_classes=num_classes,
+            hidden_dim=hidden_dim, num_layers=num_layers,
+            dropout=dropout, lr=lr, task_type=task_type,
         )
         if not is_regression:
             model_kwargs["class_weights"] = class_weights
@@ -62,39 +74,28 @@ def run_hpo(
         train_loader = DataLoader([train_data], batch_size=1, shuffle=False)
         val_loader = DataLoader([val_data], batch_size=1, shuffle=False)
 
+        early_stop = pl.callbacks.EarlyStopping(
+            monitor="val_loss", patience=settings.HPO_PATIENCE, mode="min",
+        )
         trainer = pl.Trainer(
-            max_epochs=20,
-            enable_progress_bar=False,
-            enable_model_summary=False,
-            logger=False,
-            enable_checkpointing=False,
+            callbacks=[early_stop], **_trainer_kwargs(accelerator, precision),
         )
         trainer.fit(model, train_loader, val_loader)
 
         val_loss = trainer.callback_metrics.get("val_loss", torch.tensor(float("inf")))
         return float(val_loss)
 
-    def trial_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-        """Called after each trial completes. Updates task progress."""
-        if task_id:
-            completed = trial.number + 1
-            # Map HPO progress: 15% → 50%
-            hpo_progress = 15 + int(completed / n_trials * 35)
-            store.update_task(
-                task_id,
-                current_trial=completed,
-                total_trials=n_trials,
-                progress=min(hpo_progress, 50),
-            )
-
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5)
     study = optuna.create_study(direction="minimize", pruner=pruner)
-    study.optimize(objective, n_trials=n_trials, timeout=600, callbacks=[trial_callback])
+
+    callbacks = []
+    if task_id:
+        callbacks.append(TrialProgressCallback(task_id, n_trials=n_trials))
+
+    study.optimize(objective, n_trials=n_trials, timeout=600, callbacks=callbacks)
 
     best = study.best_params
-
-    # Build leaderboard of all completed trials
     leaderboard = []
     for trial in study.trials:
         if trial.state == optuna.trial.TrialState.COMPLETE:
@@ -115,5 +116,5 @@ def run_hpo(
         "num_layers": best["num_layers"],
         "dropout": best["dropout"],
         "lr": best["lr"],
-        "leaderboard": leaderboard[:10],  # Top 10 trials
+        "leaderboard": leaderboard[:10],
     }

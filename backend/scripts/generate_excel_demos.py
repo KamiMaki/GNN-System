@@ -30,7 +30,7 @@ def _write(path: Path, sheets: dict[str, pd.DataFrame]) -> None:
 
 # ── Homogeneous demo (10 graphs, graph_regression) ────────────────────────
 
-def make_homo(n_graphs: int = 10) -> dict[str, pd.DataFrame]:
+def make_homo(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
     rng = random.Random(SEED)
     parameter = pd.DataFrame([
         {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "delay_ps", "Weight": None},
@@ -89,7 +89,7 @@ def make_homo(n_graphs: int = 10) -> dict[str, pd.DataFrame]:
 
 # ── Heterogeneous demo (10 graphs, cell/pin/net, graph_regression) ────────
 
-def make_hetero(n_graphs: int = 10) -> dict[str, pd.DataFrame]:
+def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
     rng = random.Random(SEED + 1)
     parameter = pd.DataFrame([
         # cell nodes

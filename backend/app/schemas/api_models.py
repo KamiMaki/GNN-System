@@ -201,6 +201,7 @@ class EpochHistory(BaseModel):
     loss: float
     val_loss: float
     accuracy: Optional[float] = None
+    lr: Optional[float] = None
 
 
 class ConfusionMatrix(BaseModel):

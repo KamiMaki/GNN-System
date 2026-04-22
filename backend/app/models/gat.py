@@ -73,4 +73,9 @@ class GATClassifier(pl.LightningModule):
         return self._shared_step(batch, "val")
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-4)
+        opt = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-4)
+        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
+        return {
+            "optimizer": opt,
+            "lr_scheduler": {"scheduler": sched, "monitor": "val_loss", "interval": "epoch"},
+        }
