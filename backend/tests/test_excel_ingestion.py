@@ -171,7 +171,7 @@ def test_parse_excel_edge_y_deferred():
     wb = _build_workbook({
         "Parameter": parameter, "Node_default": nodes, "Edge_default": edges,
     })
-    with pytest.raises(ValueError, match="edge-level prediction"):
+    with pytest.raises(ValueError, match="Edge-level prediction"):
         parse_excel_file(wb)
 
 
@@ -193,24 +193,62 @@ def test_parse_excel_multi_y_levels_deferred():
         "Node_default": nodes,
         "Graph_default": graph,
     })
-    with pytest.raises(ValueError, match="only one Y level"):
+    with pytest.raises(ValueError, match="Multi-task"):
         parse_excel_file(wb)
 
 
-def test_parse_excel_multi_type_per_level_deferred():
+def test_parse_excel_heterogeneous_is_supported():
+    """Phase 2: multiple Types per Level now accepted (heterogeneous graph)."""
     parameter = pd.DataFrame([
         {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "X_1"},
         {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "X_2"},
-        {"XY": "Y", "Level": "Node", "Type": "cell", "Parameter": "label"},
+        {"XY": "X", "Level": "Edge", "Type": "cell2pin", "Parameter": "w"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "score"},
     ])
-    # Data sheets present but multi-type declaration itself should fail first.
+    nodes_cell = pd.DataFrame({"Graph_ID": [1, 1], "Node": [0, 1], "X_1": [0.1, 0.2]})
+    nodes_pin = pd.DataFrame({"Graph_ID": [1, 1], "Node": [2, 3], "X_2": [0.3, 0.4]})
+    edges = pd.DataFrame({
+        "Graph_ID": [1], "Source_Node_ID": [0], "Target_Node_ID": [2],
+        "Source_Node_Type": ["cell"], "Target_Node_Type": ["pin"], "w": [0.5],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "score": [1.5]})
     wb = _build_workbook({
         "Parameter": parameter,
-        "Node_cell": pd.DataFrame({"Node": [0], "X_1": [0.1], "label": [0]}),
-        "Node_pin": pd.DataFrame({"Node": [0], "X_2": [0.1]}),
+        "Node_cell": nodes_cell,
+        "Node_pin": nodes_pin,
+        "Edge_cell2pin": edges,
+        "Graph_default": graph,
     })
-    with pytest.raises(ValueError, match="only one Type per Level"):
-        parse_excel_file(wb)
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is True
+    assert set(result["node_dfs"].keys()) == {"cell", "pin"}
+    assert set(result["edge_dfs"].keys()) == {"cell2pin"}
+    assert result["canonical_edges"] == [("cell", "cell2pin", "pin")]
+    assert result["task_type"] == "graph_regression"
+    assert result["label_column"] == "score"
+    # Unified views still populated.
+    assert len(result["nodes_df"]) == 4
+
+
+def test_parse_excel_hetero_edge_defaults_to_single_node_type():
+    """Homogeneous edges without explicit src/dst_type columns default to the node type."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "X", "Level": "Edge", "Type": "default", "Parameter": "w"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y"},
+    ])
+    nodes = pd.DataFrame({"Graph_ID": [1, 1], "Node": [0, 1], "X_1": [0.1, 0.2]})
+    edges = pd.DataFrame({
+        "Graph_ID": [1], "Source_Node_ID": [0], "Target_Node_ID": [1], "w": [0.5],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "y": [0.9]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node_default": nodes,
+        "Edge_default": edges, "Graph_default": graph,
+    })
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is False
+    assert result["canonical_edges"] == [("default", "default", "default")]
 
 
 def test_parse_excel_no_y_raises():

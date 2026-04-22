@@ -1,12 +1,8 @@
 import os
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-
-from app.core.store import put_dataset
-from app.data.mock_loader import load_mock_dataset
 
 # Maximum upload size: 100 MB
 MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE_BYTES", 100 * 1024 * 1024))
@@ -20,15 +16,7 @@ class LimitUploadSizeMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Pre-load mock dataset at startup
-    mock_record = load_mock_dataset()
-    put_dataset(mock_record["dataset_id"], mock_record)
-    yield
-
-
-app = FastAPI(title="GraphX.AI GNN API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="GraphX.AI GNN API", version="0.4.0")
 app.add_middleware(LimitUploadSizeMiddleware)
 
 _allowed_origins = os.environ.get(
@@ -43,8 +31,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-from app.routers import datasets, tasks, projects
+from app.routers import tasks, projects
 
-app.include_router(datasets.router, prefix="/api/v1")
 app.include_router(tasks.router, prefix="/api/v1")
 app.include_router(projects.router, prefix="/api/v1")

@@ -1,16 +1,19 @@
-"""Excel (.xlsx) graph-data ingestion — Phase 1.
+"""Excel (.xlsx) graph-data ingestion.
 
-Reads the 4-sheet template (Parameter + Node_{Type} + Edge_{Type} + Graph_{Type}),
+Reads the multi-sheet template (Parameter + Node_{Type} + Edge_{Type} + Graph_{Type}),
 derives the user's intended task from Y rows in the Parameter sheet, and emits
-DataFrames in the same shape as the existing CSV ingestion so the downstream
-PyG converter / training pipeline can consume them unchanged.
+DataFrames ready for the PyG converter.
 
-Phase 1 scope restrictions (raise ValueError otherwise):
-    * at most one Type per Level
-    * Y declared on Node **or** Graph (not both, not Edge)
+Phase 2 scope (current):
+    * Homogeneous and heterogeneous graphs both supported.
+    * Y must be declared on exactly one Level (Node or Graph).
+    * Edge-level prediction (Y on Edge) is still deferred.
 
-Phase 2 will lift these: HeteroData for multi-Type, multi-task weighted loss
-across Y levels, edge-level prediction heads.
+Heterogeneous Edge sheet convention:
+    In addition to Source_Node_ID / Target_Node_ID, edge sheets in hetero mode
+    declare Source_Node_Type / Target_Node_Type columns so (src_type, rel, dst_type)
+    canonical edges can be constructed. For homogeneous graphs these columns are
+    optional — the single declared node type is used by default.
 """
 from __future__ import annotations
 
@@ -27,15 +30,15 @@ from app.data.excel_spec import (
 
 
 # ── Column-name normalisation ──
-# Template convention     → existing CSV-pair convention used by pyg_converter
 NODE_ID_CANDIDATES = ("Node", "node_id", "NodeID", "Node_ID", "node")
 SRC_ID_CANDIDATES = ("Source_Node_ID", "src_id", "source", "Source", "SourceNodeID")
 DST_ID_CANDIDATES = ("Target_Node_ID", "dst_id", "target", "Target", "TargetNodeID")
 GRAPH_ID_CANDIDATES = ("Graph_ID", "graph_id", "GraphID")
+SRC_TYPE_CANDIDATES = ("Source_Node_Type", "src_type", "SourceType")
+DST_TYPE_CANDIDATES = ("Target_Node_Type", "dst_type", "TargetType")
 
 
 def _pick(df: pd.DataFrame, candidates: tuple[str, ...]) -> Optional[str]:
-    """Return the first candidate column name present in df (case-insensitive)."""
     lower = {str(c).lower(): c for c in df.columns}
     for cand in candidates:
         hit = lower.get(cand.lower())
@@ -58,52 +61,34 @@ def _infer_task_kind(series: pd.Series) -> str:
     """Return 'classification' or 'regression' based on a Y column's values."""
     clean = pd.to_numeric(series, errors="coerce").dropna()
     if clean.empty:
-        # Non-numeric labels → classification
         return "classification"
     nunique = clean.nunique()
-    # Integer-only AND ≤ 20 distinct values → classification, else regression
     is_integer = bool(((clean.astype(float) % 1) == 0).all())
     if is_integer and nunique <= 20:
         return "classification"
     return "regression"
 
 
-def _validate_phase1(spec: ExcelGraphSpec) -> None:
-    """Enforce the Phase 1 scope boundary. Clear errors on violation."""
-    # Rule 1: at most one Type per Level (heterogeneous deferred)
-    for level in VALID_LEVELS:
-        types = spec.types_for_level(level)
-        if len(types) > 1:
-            raise ValueError(
-                f"Phase 1 supports only one Type per Level, but Level={level} "
-                f"declares types {types}. Heterogeneous graphs are planned for Phase 2."
-            )
-
-    # Rule 2: at least one Y
+def _validate_scope(spec: ExcelGraphSpec) -> None:
+    """Enforce the scope boundary for the current implementation."""
     y_levels = spec.y_levels()
     if not y_levels:
         raise ValueError(
             "Parameter sheet must declare at least one Y row "
             "(to indicate the prediction target)."
         )
-
-    # Rule 3: Edge Y deferred
     if "Edge" in y_levels:
         raise ValueError(
-            "Phase 1 does not support edge-level prediction (Y on Edge). "
-            "This is planned for Phase 2."
+            "Edge-level prediction (Y on Edge) is not yet supported."
         )
-
-    # Rule 4: at most one Y level in Phase 1 (multi-task deferred)
     if len(y_levels) > 1:
         raise ValueError(
-            f"Phase 1 supports only one Y level, but Y is declared on multiple "
-            f"levels: {y_levels}. Multi-task training is planned for Phase 2."
+            f"Multi-task training is not yet supported; Y declared on "
+            f"multiple levels: {y_levels}."
         )
 
 
 def _load_workbook(source: bytes | str) -> dict[str, pd.DataFrame]:
-    """Read every sheet into a DataFrame dict. Works with bytes or a path."""
     buf: io.BytesIO | str
     buf = io.BytesIO(source) if isinstance(source, (bytes, bytearray)) else source
     try:
@@ -126,7 +111,6 @@ def _normalise_node_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
     node_col = _require(out, NODE_ID_CANDIDATES, sheet_name, "node id")
     if node_col != "node_id":
         out = out.rename(columns={node_col: "node_id"})
-    # Optional Graph_ID → _graph (matches multi-graph CSV pipeline)
     g_col = _pick(out, GRAPH_ID_CANDIDATES)
     if g_col and g_col != "_graph":
         out = out.rename(columns={g_col: "_graph"})
@@ -142,8 +126,16 @@ def _normalise_edge_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
         renames[src_col] = "src_id"
     if dst_col != "dst_id":
         renames[dst_col] = "dst_id"
+
+    src_type_col = _pick(out, SRC_TYPE_CANDIDATES)
+    dst_type_col = _pick(out, DST_TYPE_CANDIDATES)
+    if src_type_col and src_type_col != "src_type":
+        renames[src_type_col] = "src_type"
+    if dst_type_col and dst_type_col != "dst_type":
+        renames[dst_type_col] = "dst_type"
     if renames:
         out = out.rename(columns=renames)
+
     g_col = _pick(out, GRAPH_ID_CANDIDATES)
     if g_col and g_col != "_graph":
         out = out.rename(columns={g_col: "_graph"})
@@ -153,93 +145,129 @@ def _normalise_edge_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
 def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     """Parse an Excel workbook matching graph_data_template.xlsx.
 
-    Returns a dict:
-        {
-          "spec":              ExcelGraphSpec,
-          "nodes_df":          DataFrame with at minimum node_id column,
-          "edges_df":          DataFrame with src_id / dst_id columns (possibly empty),
-          "graph_df":          Optional DataFrame for graph-level features,
-          "task_type":         "node_classification" | "node_regression"
-                             | "graph_classification" | "graph_regression",
-          "label_column":      name of the Y column,
-          "label_weight":      float (defaults 1.0 — persisted for Phase 2),
-          "name":              dataset_name,
-        }
-    Raises ValueError on any schema violation or Phase 1 boundary breach.
+    Returns:
+        dict with keys:
+            spec                 : ExcelGraphSpec
+            is_heterogeneous     : bool
+            nodes_df             : unified node DataFrame (homo) — also emitted in hetero
+                                   mode by concatenating all type-tagged node sheets
+            edges_df             : unified edge DataFrame (homo+hetero)
+            graph_df             : Optional[pd.DataFrame]
+            node_dfs             : dict[node_type, DataFrame]   (hetero path)
+            edge_dfs             : dict[edge_type, DataFrame]   (hetero path)
+            canonical_edges      : list[tuple[src_type, rel, dst_type]]
+            task_type            : e.g. "graph_regression"
+            label_column         : Y column name
+            label_weight         : float (default 1.0)
+            name                 : dataset_name
     """
     sheets = _load_workbook(source)
     spec = parse_parameter_sheet(sheets["Parameter"])
-    _validate_phase1(spec)
+    _validate_scope(spec)
 
-    # Exactly one Y level (post-validation), exactly one Type per declared level.
     y_level = spec.y_levels()[0]           # "Node" or "Graph"
 
-    # Resolve the Type for each declared level; fail fast if data sheet is missing.
-    def _resolve(level: str) -> tuple[Optional[str], Optional[pd.DataFrame]]:
-        types = spec.types_for_level(level)
-        if not types:
-            return None, None
-        type_ = types[0]
-        sheet_name = f"{level}_{type_}"
-        if sheet_name not in sheets:
-            raise ValueError(
-                f"Parameter sheet declares Level={level} Type={type_} but data "
-                f"sheet '{sheet_name}' is missing."
-            )
-        return type_, sheets[sheet_name]
+    def _resolve_all(level: str) -> dict[str, pd.DataFrame]:
+        """Return {type: DataFrame} for every declared Type on a Level."""
+        out: dict[str, pd.DataFrame] = {}
+        for t in spec.types_for_level(level):
+            sheet_name = f"{level}_{t}"
+            if sheet_name not in sheets:
+                raise ValueError(
+                    f"Parameter sheet declares Level={level} Type={t} but data "
+                    f"sheet '{sheet_name}' is missing."
+                )
+            out[t] = sheets[sheet_name]
+        return out
 
-    node_type, nodes_raw = _resolve("Node")
-    edge_type, edges_raw = _resolve("Edge")
-    graph_type, graph_raw = _resolve("Graph")
+    node_raw = _resolve_all("Node")
+    edge_raw = _resolve_all("Edge")
+    graph_raw = _resolve_all("Graph")
 
-    if nodes_raw is None:
+    if not node_raw:
         raise ValueError(
             "Parameter sheet must declare at least one Node-level entry "
             "(to identify graph vertices)."
         )
 
-    nodes_df = _normalise_node_sheet(nodes_raw, f"Node_{node_type}")
-    edges_df = (
-        _normalise_edge_sheet(edges_raw, f"Edge_{edge_type}")
-        if edges_raw is not None
-        else pd.DataFrame(columns=["src_id", "dst_id"])
+    # Normalise each type sheet individually.
+    node_dfs: dict[str, pd.DataFrame] = {}
+    for t, df in node_raw.items():
+        norm = _normalise_node_sheet(df, f"Node_{t}")
+        norm["_node_type"] = t
+        node_dfs[t] = norm
+
+    edge_dfs: dict[str, pd.DataFrame] = {}
+    for t, df in edge_raw.items():
+        norm = _normalise_edge_sheet(df, f"Edge_{t}")
+        norm["_edge_type"] = t
+        edge_dfs[t] = norm
+
+    graph_df: Optional[pd.DataFrame] = None
+    if graph_raw:
+        # Single Type for Graph level expected; concat to be safe.
+        graph_df = pd.concat(list(graph_raw.values()), ignore_index=True)
+        gcol = _pick(graph_df, GRAPH_ID_CANDIDATES)
+        if gcol and gcol != "_graph":
+            graph_df = graph_df.rename(columns={gcol: "_graph"})
+
+    # Unified views for homogeneous pipeline + explore stats.
+    unified_nodes = pd.concat(list(node_dfs.values()), ignore_index=True)
+    unified_edges = (
+        pd.concat(list(edge_dfs.values()), ignore_index=True)
+        if edge_dfs else pd.DataFrame(columns=["src_id", "dst_id"])
     )
-    graph_df = graph_raw.copy() if graph_raw is not None else None
+
+    # Canonical edges: (src_type, relation, dst_type) for HeteroData.
+    canonical_edges: list[tuple[str, str, str]] = []
+    default_node_type = next(iter(node_dfs))  # first declared node type
+    for rel, edf in edge_dfs.items():
+        if "src_type" in edf.columns and "dst_type" in edf.columns and not edf.empty:
+            # Take first row to determine canonical types; downstream validation
+            # asserts consistency.
+            st = str(edf["src_type"].iloc[0])
+            dt = str(edf["dst_type"].iloc[0])
+        else:
+            st = dt = default_node_type
+        canonical_edges.append((st, rel, dt))
 
     # ── derive task_type + label_column ──
     y_type = spec.types_for_level(y_level)[0]
     y_cols = spec.y_columns(y_level, y_type)
-    # Phase 1 validated exactly one Y level; multiple Y columns in same level ⇒ take first + warn via persisted spec
     label_column = y_cols[0]
 
     if y_level == "Node":
-        if label_column not in nodes_df.columns:
+        target_df = node_dfs.get(y_type)
+        if target_df is None or label_column not in target_df.columns:
             raise ValueError(
                 f"Label column '{label_column}' declared in Parameter sheet "
-                f"is not present in data sheet Node_{node_type}."
+                f"is not present in data sheet Node_{y_type}."
             )
-        kind = _infer_task_kind(nodes_df[label_column])
+        kind = _infer_task_kind(target_df[label_column])
         task_type = f"node_{kind}"
     elif y_level == "Graph":
         if graph_df is None or label_column not in graph_df.columns:
             raise ValueError(
                 f"Label column '{label_column}' declared in Parameter sheet "
-                f"is not present in Graph_{graph_type} sheet."
+                f"is not present in Graph_{y_type} sheet."
             )
         kind = _infer_task_kind(graph_df[label_column])
         task_type = f"graph_{kind}"
     else:
-        # Defensive; _validate_phase1 already filtered Edge.
-        raise ValueError(f"Unsupported Y level in Phase 1: {y_level}")
+        raise ValueError(f"Unsupported Y level: {y_level}")
 
     y_entries = [e for e in spec.entries if e.xy == "Y" and e.parameter == label_column]
     label_weight = y_entries[0].weight if y_entries and y_entries[0].weight is not None else 1.0
 
     return {
         "spec": spec,
-        "nodes_df": nodes_df,
-        "edges_df": edges_df,
+        "is_heterogeneous": spec.is_heterogeneous(),
+        "nodes_df": unified_nodes,
+        "edges_df": unified_edges,
         "graph_df": graph_df,
+        "node_dfs": node_dfs,
+        "edge_dfs": edge_dfs,
+        "canonical_edges": canonical_edges,
         "task_type": task_type,
         "label_column": label_column,
         "label_weight": label_weight,

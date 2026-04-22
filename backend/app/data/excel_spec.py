@@ -9,15 +9,14 @@ The graph_data_template.xlsx Parameter sheet declares every feature / label with
     Parameter : column name inside the corresponding data sheet (e.g. "X_1").
     Weight    : loss weight — only meaningful for Y rows; empty ⇒ 1.0.
 
-Phase 1 of the Excel migration consumes this spec but supports only:
-    * a single Type per Level
-    * at most one Level with Y rows (Node OR Graph; Edge Y is deferred to Phase 2)
-
-The full spec is persisted regardless so Phase 2 can consume it without a re-upload.
+Phase 2 scope:
+    * Heterogeneous graphs supported (multiple Types per Level).
+    * Single Y level (Node OR Graph). Edge-level prediction + multi-task
+      remain deferred to a later phase.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Literal, Optional
 
 import pandas as pd
@@ -44,7 +43,7 @@ class ExcelGraphSpec:
     """Structured view of the Parameter sheet."""
     entries: list[ParameterEntry] = field(default_factory=list)
 
-    # ── introspection helpers ──
+    # ── basic introspection ──
 
     def types_for_level(self, level: str) -> list[str]:
         """Distinct Type values declared for a given Level (preserves first-seen order)."""
@@ -68,6 +67,20 @@ class ExcelGraphSpec:
         have = {e.level for e in self.entries if e.xy == "Y"}
         return [lv for lv in VALID_LEVELS if lv in have]
 
+    # ── heterogeneity ──
+
+    def node_types(self) -> list[str]:
+        return self.types_for_level("Node")
+
+    def edge_types(self) -> list[str]:
+        return self.types_for_level("Edge")
+
+    def is_heterogeneous(self) -> bool:
+        """True when any Level declares more than one Type."""
+        return len(self.node_types()) > 1 or len(self.edge_types()) > 1
+
+    # ── serialisation ──
+
     def to_payload(self) -> dict:
         """JSON-serializable representation for persistence / API responses."""
         return {
@@ -80,19 +93,18 @@ class ExcelGraphSpec:
                     "weight": e.weight,
                 }
                 for e in self.entries
-            ]
+            ],
+            "is_heterogeneous": self.is_heterogeneous(),
+            "node_types": self.node_types(),
+            "edge_types": self.edge_types(),
         }
 
 
 def parse_parameter_sheet(df: pd.DataFrame) -> ExcelGraphSpec:
-    """Validate and parse the Parameter sheet DataFrame into an ExcelGraphSpec.
-
-    Raises ValueError with a user-friendly message on any structural problem.
-    """
+    """Validate and parse the Parameter sheet DataFrame into an ExcelGraphSpec."""
     if df is None or df.empty:
         raise ValueError("Parameter sheet is empty.")
 
-    # Normalise column casing for forgiving matching but keep canonical names.
     col_lookup = {str(c).strip(): c for c in df.columns}
     canonical = {k.lower(): v for k, v in col_lookup.items()}
     missing = [c for c in REQUIRED_PARAMETER_COLUMNS if c.lower() not in canonical]
@@ -114,7 +126,6 @@ def parse_parameter_sheet(df: pd.DataFrame) -> ExcelGraphSpec:
         type_raw = _get(row, "Type")
         param_raw = _get(row, "Parameter")
 
-        # Skip blank rows (all required fields empty)
         if all(pd.isna(v) or str(v).strip() == "" for v in (xy_raw, level_raw, type_raw, param_raw)):
             continue
 

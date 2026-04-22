@@ -1,47 +1,18 @@
-import uuid
+"""Read-only training-task endpoints.
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+Task creation is owned by the projects router (POST /projects/{id}/train);
+this module only exposes list / get / report endpoints for convenience.
+"""
+from fastapi import APIRouter, HTTPException
 
 from app.core import store
-from app.schemas.api_models import (
-    CreateTaskRequest,
-    Report,
-    TaskStatus,
-)
-from app.training.pipeline import run_training_task
+from app.schemas.api_models import Report, TaskStatus
 
 router = APIRouter()
 
 
-@router.post("/tasks", response_model=TaskStatus)
-async def create_task(body: CreateTaskRequest, background_tasks: BackgroundTasks):
-    """Create a training task (legacy endpoint). Returns immediately with QUEUED status."""
-    dataset = store.get_dataset(body.dataset_id)
-    if not dataset:
-        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id} not found")
-
-    task_id = str(uuid.uuid4())
-    task_record = {
-        "task_id": task_id,
-        "dataset_id": body.dataset_id,
-        "task_type": body.task_type,
-        "status": "QUEUED",
-        "progress": 0,
-        "results": None,
-        "report": None,
-        "history": [],
-        "error": None,
-    }
-    store.put_task(task_id, task_record)
-
-    background_tasks.add_task(run_training_task, task_id)
-
-    return TaskStatus(task_id=task_id, status="QUEUED", progress=0)
-
-
 @router.get("/tasks", response_model=list[TaskStatus])
 async def list_tasks():
-    """List all tasks."""
     all_tasks = store.list_tasks()
     return [
         TaskStatus(
@@ -60,7 +31,6 @@ async def list_tasks():
 
 @router.get("/tasks/{task_id}", response_model=TaskStatus)
 async def get_task(task_id: str):
-    """Get task status."""
     task = store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -78,7 +48,6 @@ async def get_task(task_id: str):
 
 @router.get("/tasks/{task_id}/report", response_model=Report)
 async def get_report(task_id: str):
-    """Get training report. Only available when task is COMPLETED."""
     task = store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")

@@ -1,3 +1,13 @@
+"""Model factory — returns the right Lightning module for the task.
+
+Two code paths:
+    * homogeneous → existing GCN/GAT/SAGE/GIN/MLP modules (node- or graph-level)
+    * heterogeneous → HeteroGraphRegressor (wraps a homo backbone via to_hetero)
+"""
+from __future__ import annotations
+
+from typing import Optional
+
 import pytorch_lightning as pl
 
 from app.models.gcn import GCNClassifier
@@ -5,9 +15,10 @@ from app.models.gat import GATClassifier
 from app.models.sage import SAGEClassifier
 from app.models.gin import GINClassifier
 from app.models.mlp import MLPClassifier
+from app.models.hetero_wrapper import HeteroGraphRegressor
 
 
-MODEL_REGISTRY: dict[str, type[pl.LightningModule]] = {
+HOMO_REGISTRY: dict[str, type[pl.LightningModule]] = {
     "gcn": GCNClassifier,
     "gat": GATClassifier,
     "sage": SAGEClassifier,
@@ -15,17 +26,42 @@ MODEL_REGISTRY: dict[str, type[pl.LightningModule]] = {
     "mlp": MLPClassifier,
 }
 
+# Backbones to_hetero can lift. MLP/GIN are skipped (MLP has no edges; GIN's
+# inner MLP doesn't play well with to_hetero's per-relation lift).
+HETERO_BACKBONES = ("gcn", "gat", "sage")
+
 
 def get_model(
     model_name: str,
     num_features: int,
     num_classes: int = 2,
     task_type: str = "node_classification",
+    metadata: Optional[tuple[list[str], list[tuple[str, str, str]]]] = None,
     **kwargs,
 ) -> pl.LightningModule:
-    if model_name not in MODEL_REGISTRY:
-        raise ValueError(f"Unknown model: {model_name}. Choose from {list(MODEL_REGISTRY)}")
-    return MODEL_REGISTRY[model_name](
+    """Return a model instance.
+
+    If ``metadata`` (HeteroData metadata tuple) is provided, returns a
+    HeteroGraphRegressor wrapping the named backbone. Otherwise returns the
+    standard homogeneous Lightning module.
+    """
+    if metadata is not None:
+        conv = model_name if model_name in HETERO_BACKBONES else "sage"
+        return HeteroGraphRegressor(
+            metadata=metadata,
+            hidden_dim=kwargs.get("hidden_dim", 64),
+            num_layers=kwargs.get("num_layers", 3),
+            dropout=kwargs.get("dropout", 0.3),
+            lr=kwargs.get("lr", 1e-3),
+            num_classes=num_classes,
+            conv=conv,
+            task_type=task_type,
+        )
+
+    if model_name not in HOMO_REGISTRY:
+        raise ValueError(f"Unknown model: {model_name}. Choose from {list(HOMO_REGISTRY)}")
+    # class_weights may be passed through via kwargs for classification tasks.
+    return HOMO_REGISTRY[model_name](
         num_features=num_features,
         num_classes=num_classes,
         task_type=task_type,

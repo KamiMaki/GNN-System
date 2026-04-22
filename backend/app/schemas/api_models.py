@@ -1,14 +1,33 @@
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, Literal, Union
+"""API request/response schemas."""
+from __future__ import annotations
 
-# Allowed task types across the application
+from typing import Literal, Optional, Union
+
+from pydantic import BaseModel, Field
+
+
 VALID_TASK_TYPES = Literal[
     "node_classification", "node_regression",
     "graph_classification", "graph_regression",
 ]
 
 
-# ── Dataset ──
+# ── Dataset ────────────────────────────────────────────────────────────────
+
+class ExcelSchemaEntry(BaseModel):
+    xy: Literal["X", "Y"]
+    level: Literal["Node", "Edge", "Graph"]
+    type: str
+    parameter: str
+    weight: Optional[float] = None
+
+
+class ExcelSchemaPayload(BaseModel):
+    entries: list[ExcelSchemaEntry]
+    is_heterogeneous: bool = False
+    node_types: list[str] = []
+    edge_types: list[str] = []
+
 
 class DatasetSummary(BaseModel):
     dataset_id: str
@@ -18,20 +37,24 @@ class DatasetSummary(BaseModel):
     num_features: int
     num_classes: int
     is_directed: bool
-    task_type: str = "node_classification"
+    task_type: str = "graph_regression"
     has_edge_attrs: bool = False
-    # ── Excel schema-driven ingestion (Phase 1) ──
-    # Populated when the dataset originated from an .xlsx template upload.
+    # Excel-origin metadata
     declared_task_type: Optional[str] = None
     declared_label_column: Optional[str] = None
-    schema_spec: Optional[dict] = None  # ExcelGraphSpec.to_payload(), persisted for Phase 2
+    schema_spec: Optional[dict] = None
+    # Multi-graph / heterogeneity summary
+    graph_count: int = 1
+    is_heterogeneous: bool = False
+    node_types: list[str] = []
+    edge_types: list[str] = []
 
 
-# ── Generic Explore (new) ──
+# ── Explore ────────────────────────────────────────────────────────────────
 
 class ColumnInfo(BaseModel):
     name: str
-    dtype: str  # "numeric", "categorical", "boolean"
+    dtype: str
     missing_count: int
     missing_pct: float
     unique_count: int
@@ -42,33 +65,19 @@ class GenericExploreData(BaseModel):
     num_edges: int
     columns: list[ColumnInfo]
     edge_columns: list[ColumnInfo] = []
-    feature_correlation: list[dict]  # [{x: str, y: str, value: float}]
+    feature_correlation: list[dict]
     correlation_columns: list[str]
+    # Multi-graph / heterogeneity fields (Excel-only platform)
+    graph_count: int = 1
+    avg_nodes_per_graph: float = 0.0
+    avg_edges_per_graph: float = 0.0
+    is_heterogeneous: bool = False
+    node_types: list[str] = []
+    edge_types: list[str] = []
+    canonical_edges: list[list[str]] = []
 
 
-class NumericColumnStats(BaseModel):
-    column: str
-    dtype: Literal["numeric"] = "numeric"
-    mean: float
-    median: float
-    std: float
-    min: float
-    max: float
-    q1: float
-    q3: float
-    outlier_count: int
-    distribution: list[dict]  # [{range: str, count: int}]
-
-
-class CategoricalColumnStats(BaseModel):
-    column: str
-    dtype: Literal["categorical"] = "categorical"
-    value_counts: list[dict]  # [{name: str, count: int}]
-    top_value: str
-    top_count: int
-
-
-# ── Label Validation ──
+# ── Label validation / imputation ──────────────────────────────────────────
 
 class LabelValidationRequest(BaseModel):
     task_type: VALID_TASK_TYPES
@@ -79,12 +88,10 @@ class LabelValidationResult(BaseModel):
     valid: bool
     message: str
     num_classes: Optional[int] = None
-    class_distribution: Optional[list[dict]] = None  # [{label: str, count: int}]
-    value_range: Optional[dict] = None  # {min, max, mean, std}
+    class_distribution: Optional[list[dict]] = None
+    value_range: Optional[dict] = None
     is_continuous: Optional[bool] = None
 
-
-# ── Imputation ──
 
 class ImputationRequest(BaseModel):
     column: str
@@ -97,20 +104,16 @@ class ImputationResult(BaseModel):
     method: str
 
 
-# ── Data Confirmation (gate Step 2 → Step 3) ──
-
 class ConfirmDataRequest(BaseModel):
     task_type: VALID_TASK_TYPES
     label_column: str
 
 
-# ── Correlation Request ──
-
 class CorrelationRequest(BaseModel):
     columns: list[str]
 
 
-# ── Project ──
+# ── Project ────────────────────────────────────────────────────────────────
 
 class CreateProjectRequest(BaseModel):
     name: str
@@ -143,18 +146,7 @@ class ProjectDetail(ProjectSummary):
     experiment_ids: list[str] = []
 
 
-# ── Legacy Explore (kept for backward compat) ──
-
-class ExploreData(BaseModel):
-    fanout_dist: list[dict]
-    slack_dist: list[dict]
-    cell_type_dist: list[dict]
-    feature_correlation: list[dict]
-    critical_paths_table: list[dict]
-    radar_data: list[dict]
-
-
-# ── Metrics & Training ──
+# ── Metrics ────────────────────────────────────────────────────────────────
 
 class SplitMetrics(BaseModel):
     accuracy: Optional[float] = None
@@ -212,8 +204,8 @@ class EpochHistory(BaseModel):
 
 
 class ConfusionMatrix(BaseModel):
-    labels: list[str]       # class labels
-    matrix: list[list[int]] # NxN matrix
+    labels: list[str]
+    matrix: list[list[int]]
 
 
 class NodePrediction(BaseModel):
@@ -225,23 +217,24 @@ class NodePrediction(BaseModel):
 
 
 class Report(BaseModel):
-    task_type: str = "node_classification"
+    task_type: str = "graph_regression"
     train_metrics: SplitMetrics
     val_metrics: Optional[SplitMetrics] = None
     test_metrics: SplitMetrics
     history: list[EpochHistory]
     confusion_matrix: Optional[ConfusionMatrix] = None
-    residual_data: Optional[list[dict]] = None  # [{actual, predicted}] for regression
+    residual_data: Optional[list[dict]] = None
     node_predictions: Optional[list[NodePrediction]] = None
     best_config: Optional[BestConfig] = None
     leaderboard: Optional[list[LeaderboardEntry]] = None
+    is_heterogeneous: bool = False
 
 
-# ── Training Config ──
+# ── Training ───────────────────────────────────────────────────────────────
 
 class StartTrainingRequest(BaseModel):
-    models: list[str] = []  # empty = Auto (all models)
-    n_trials: int = Field(default=150, ge=1, le=500)
+    models: list[str] = []
+    n_trials: int = Field(default=20, ge=1, le=500)
 
 
 class TrainingEstimate(BaseModel):
@@ -249,7 +242,7 @@ class TrainingEstimate(BaseModel):
     device: str
 
 
-# ── Experiment Hierarchy ──
+# ── Experiment hierarchy ──────────────────────────────────────────────────
 
 class CreateExperimentRequest(BaseModel):
     name: str
@@ -263,7 +256,7 @@ class ExperimentSummary(BaseModel):
     dataset_id: str
     task_type: Optional[str] = None
     label_column: Optional[str] = None
-    current_step: int = 1  # 1=created, 2=data_analyzed, 3=training, 4=completed
+    current_step: int = 1
     status: str = "created"
     created_at: str
     updated_at: str
@@ -277,14 +270,14 @@ class ExperimentDetail(ExperimentSummary):
     runs: list[TaskStatus] = []
 
 
-# ── Model Registry ──
+# ── Model registry ─────────────────────────────────────────────────────────
 
 class RegisteredModel(BaseModel):
     model_id: str
     project_id: str
     task_id: str
     name: str
-    model_name: str  # gcn, gat, sage, gin, mlp
+    model_name: str
     task_type: str
     label_column: str
     num_features: int
@@ -302,29 +295,5 @@ class RegisterModelRequest(BaseModel):
     description: str = ""
 
 
-class EvaluateModelRequest(BaseModel):
-    model_id: str
-
-
-class EvaluationResult(BaseModel):
-    model_id: str
-    model_name: str
-    task_type: str
-    metrics: SplitMetrics
-    confusion_matrix: Optional[ConfusionMatrix] = None
-    residual_data: Optional[list[dict]] = None
-    node_predictions: Optional[list[NodePrediction]] = None
-    num_samples: int
-    evaluated_at: str
-
-
-# ── Legacy Task Creation (kept for backward compat) ──
-
-class CreateTaskRequest(BaseModel):
-    dataset_id: str
-    task_type: VALID_TASK_TYPES = "node_classification"
-
-
-# Rebuild model to resolve forward reference
 ProjectDetail.model_rebuild()
 ExperimentDetail.model_rebuild()
