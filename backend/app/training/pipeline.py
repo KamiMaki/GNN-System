@@ -249,7 +249,10 @@ def run_training_task(task_id: str) -> None:
             gpu_name = torch.cuda.get_device_name(0)
             device_str = f"cuda ({gpu_name}, CUDA {cuda_ver})"
 
-        store.update_task(task_id, device=device_str, status="PREPROCESSING", progress=5)
+        store.update_task(
+            task_id, device=device_str, status="PREPROCESSING", progress=5,
+            current_trial=0, total_trials=n_trials,
+        )
 
         is_hetero = bool(dataset.get("is_heterogeneous"))
         is_graph_task = task_type.startswith("graph")
@@ -276,24 +279,25 @@ def run_training_task(task_id: str) -> None:
         else:
             num_features = int(train_items.x.shape[1])
 
-        store.update_task(task_id, progress=15, status="TRAINING")
+        store.update_task(
+            task_id, progress=15, status="TRAINING",
+            current_trial=0, total_trials=n_trials,
+        )
 
-        # ── HPO (homogeneous node tasks only for now) ──
-        if not is_graph_task:
-            best_config = run_hpo(
-                train_data=train_items, val_data=val_items,
-                num_features=num_features, n_trials=n_trials,
-                task_type=task_type, models=models_filter, task_id=task_id,
-                accelerator=accelerator, precision=precision,
-            )
-        else:
-            chosen = (models_filter[0] if models_filter else "sage")
-            best_config = {
-                "model_name": chosen, "hidden_dim": 64, "num_layers": 3,
-                "dropout": 0.2, "lr": 1e-3, "leaderboard": [],
-            }
+        # ── HPO: unified across node / graph-homo / graph-hetero ──
+        best_config = run_hpo(
+            train_items=train_items, val_items=val_items,
+            num_features=num_features, n_trials=n_trials,
+            task_type=task_type, models=models_filter, task_id=task_id,
+            accelerator=accelerator, precision=precision,
+            metadata=metadata,
+        )
 
-        store.update_task(task_id, progress=50, best_config=best_config)
+        store.update_task(
+            task_id, progress=50, best_config=best_config,
+            current_trial=best_config.get("completed_trials", n_trials),
+            total_trials=n_trials,
+        )
 
         # ── Build model ──
         is_regression = task_type.endswith("regression")

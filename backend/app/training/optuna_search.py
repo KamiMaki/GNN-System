@@ -1,17 +1,36 @@
-"""Optuna hyperparameter search with per-trial early stopping."""
+"""Optuna hyperparameter search with per-trial early stopping.
+
+Supports three training kinds:
+    * node-level  — single ``Data`` for train/val
+    * graph homo  — ``list[Data]`` for train/val
+    * graph hetero— ``list[HeteroData]`` for train/val (requires ``metadata``)
+
+Every trial trains a fresh model for ``MAX_HPO_EPOCHS`` with an
+``EarlyStopping`` callback on ``val_loss``. The Optuna study itself uses a
+``MedianPruner``. A ``TrialProgressCallback`` pushes trial progress back to
+the task store so the UI can display ``Trial X / N`` live.
+"""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
 
 import optuna
 import pytorch_lightning as pl
 import torch
-from torch_geometric.data import Data
+from torch_geometric.data import Data, HeteroData
 from torch_geometric.loader import DataLoader
 
 from app.core.config import settings
-from app.models.factory import get_model, HOMO_REGISTRY as MODEL_REGISTRY
+from app.models.factory import (
+    get_model,
+    HOMO_REGISTRY as MODEL_REGISTRY,
+    HETERO_BACKBONES,
+)
 from app.training.callbacks import TrialProgressCallback
+
+
+TrainItems = Union[Data, list[Data], list[HeteroData]]
+Metadata = tuple[list[str], list[tuple[str, str, str]]]
 
 
 def _trainer_kwargs(accelerator: str, precision: str) -> dict:
@@ -28,10 +47,26 @@ def _trainer_kwargs(accelerator: str, precision: str) -> dict:
     }
 
 
+def _build_loaders(train_items: TrainItems, val_items: TrainItems) \
+        -> tuple[DataLoader, DataLoader]:
+    """Build train/val DataLoaders appropriate for the input shape."""
+    if isinstance(train_items, list):
+        batch_size = min(8, len(train_items)) or 1
+        train_loader = DataLoader(train_items, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(
+            val_items if isinstance(val_items, list) else [val_items],
+            batch_size=batch_size,
+        )
+    else:
+        train_loader = DataLoader([train_items], batch_size=1, shuffle=False)
+        val_loader = DataLoader([val_items], batch_size=1, shuffle=False)
+    return train_loader, val_loader
+
+
 def run_hpo(
-    train_data: Data,
-    val_data: Data,
-    num_features: int,
+    train_data: TrainItems = None,
+    val_data: TrainItems = None,
+    num_features: int = 0,
     n_trials: int = 20,
     class_weights: torch.Tensor | None = None,
     task_type: str = "node_classification",
@@ -39,16 +74,30 @@ def run_hpo(
     task_id: Optional[str] = None,
     accelerator: str = "auto",
     precision: str = "32-true",
+    metadata: Optional[Metadata] = None,
+    *,
+    train_items: Optional[TrainItems] = None,
+    val_items: Optional[TrainItems] = None,
 ) -> dict:
-    """Run Optuna HPO. Returns best hyperparameter dict + leaderboard.
+    """Run Optuna HPO. Returns the best hyperparameter dict + leaderboard.
 
-    Each trial uses an `EarlyStopping` callback on ``val_loss`` so bad
-    configurations abort quickly. The study also uses a ``MedianPruner``.
+    ``train_data`` / ``val_data`` are preserved for backwards compatibility
+    with the node-level caller. ``train_items`` / ``val_items`` are the new
+    kwarg names that make the graph-level path read naturally.
     """
+    train_items = train_items if train_items is not None else train_data
+    val_items = val_items if val_items is not None else val_data
+    if train_items is None or val_items is None:
+        raise ValueError("run_hpo requires train_items (or train_data) and val_items (or val_data).")
+
     is_regression = task_type.endswith("regression")
+    is_hetero = metadata is not None
     num_classes = 1 if is_regression else 2
 
-    available_models = list(MODEL_REGISTRY.keys())
+    if is_hetero:
+        available_models = list(HETERO_BACKBONES)
+    else:
+        available_models = list(MODEL_REGISTRY.keys())
     if models:
         search_models = [m for m in models if m in available_models] or available_models
     else:
@@ -66,14 +115,14 @@ def run_hpo(
             hidden_dim=hidden_dim, num_layers=num_layers,
             dropout=dropout, lr=lr, task_type=task_type,
         )
-        if not is_regression:
+        if not is_regression and not is_hetero:
             model_kwargs["class_weights"] = class_weights
+        if is_hetero:
+            model_kwargs["metadata"] = metadata
 
         model = get_model(model_name, **model_kwargs)
 
-        train_loader = DataLoader([train_data], batch_size=1, shuffle=False)
-        val_loader = DataLoader([val_data], batch_size=1, shuffle=False)
-
+        train_loader, val_loader = _build_loaders(train_items, val_items)
         early_stop = pl.callbacks.EarlyStopping(
             monitor="val_loss", patience=settings.HPO_PATIENCE, mode="min",
         )
@@ -86,14 +135,14 @@ def run_hpo(
         return float(val_loss)
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    pruner = optuna.pruners.MedianPruner(n_startup_trials=5)
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=min(5, max(1, n_trials // 4)))
     study = optuna.create_study(direction="minimize", pruner=pruner)
 
     callbacks = []
     if task_id:
         callbacks.append(TrialProgressCallback(task_id, n_trials=n_trials))
 
-    study.optimize(objective, n_trials=n_trials, timeout=600, callbacks=callbacks)
+    study.optimize(objective, n_trials=n_trials, timeout=None, callbacks=callbacks)
 
     best = study.best_params
     leaderboard = []
@@ -117,4 +166,5 @@ def run_hpo(
         "dropout": best["dropout"],
         "lr": best["lr"],
         "leaderboard": leaderboard[:10],
+        "completed_trials": len(leaderboard),
     }
