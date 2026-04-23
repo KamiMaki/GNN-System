@@ -297,3 +297,77 @@ def test_parse_excel_continuous_node_y_is_regression():
     wb = _build_workbook({"Parameter": parameter, "Node_default": nodes})
     result = parse_excel_file(wb)
     assert result["task_type"] == "node_regression"
+
+
+# ── Unified single-sheet layout (new in 2026-04-24) ────────────────────
+
+def test_parse_excel_hetero_unified_single_sheet():
+    """A single `Node` / `Edge` sheet with a Type column should split correctly."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "cell_area"},
+        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "pin_cap"},
+        {"XY": "X", "Level": "Edge", "Type": "cell2pin", "Parameter": "c2p_delay"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "score"},
+    ])
+    # Unified node sheet: cell rows leave pin_cap blank, pin rows leave cell_area blank.
+    nodes = pd.DataFrame([
+        {"Graph_ID": 1, "Node": 0, "Type": "cell", "cell_area": 1.2, "pin_cap": None},
+        {"Graph_ID": 1, "Node": 1, "Type": "cell", "cell_area": 2.3, "pin_cap": None},
+        {"Graph_ID": 1, "Node": 2, "Type": "pin", "cell_area": None, "pin_cap": 0.4},
+        {"Graph_ID": 1, "Node": 3, "Type": "pin", "cell_area": None, "pin_cap": 0.5},
+    ])
+    edges = pd.DataFrame([
+        {"Graph_ID": 1, "Source_Node_ID": 0, "Target_Node_ID": 2,
+         "Source_Node_Type": "cell", "Target_Node_Type": "pin",
+         "Type": "cell2pin", "c2p_delay": 5.0},
+    ])
+    graph = pd.DataFrame({"Graph_ID": [1], "Type": ["default"], "score": [1.5]})
+    wb = _build_workbook({
+        "Parameter": parameter,
+        "Node": nodes,
+        "Edge": edges,
+        "Graph": graph,
+    })
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is True
+    assert set(result["node_dfs"].keys()) == {"cell", "pin"}
+    # Per-type frames should NOT carry the other type's feature columns.
+    assert "pin_cap" not in result["node_dfs"]["cell"].columns
+    assert "cell_area" not in result["node_dfs"]["pin"].columns
+    # Edge frame should carry its own feature.
+    assert "c2p_delay" in result["edge_dfs"]["cell2pin"].columns
+    assert result["canonical_edges"] == [("cell", "cell2pin", "pin")]
+
+
+def test_parse_excel_unified_node_missing_type_column_raises():
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "x"},
+        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "y"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "z"},
+    ])
+    nodes = pd.DataFrame({"Graph_ID": [1, 1], "Node": [0, 1], "x": [0.1, None]})
+    graph = pd.DataFrame({"Graph_ID": [1], "z": [0.5]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node": nodes, "Graph": graph,
+    })
+    with pytest.raises(ValueError, match="missing a 'Type' column"):
+        parse_excel_file(wb)
+
+
+def test_parse_excel_unified_type_with_no_rows_raises():
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "x"},
+        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "y"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "z"},
+    ])
+    # Only cell rows present — pin rows missing.
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1], "Node": [0, 1], "Type": ["cell", "cell"],
+        "x": [0.1, 0.2], "y": [None, None],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "z": [0.5]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node": nodes, "Graph": graph,
+    })
+    with pytest.raises(ValueError, match="Type='pin'"):
+        parse_excel_file(wb)

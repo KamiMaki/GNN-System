@@ -1,19 +1,32 @@
 """Excel (.xlsx) graph-data ingestion.
 
-Reads the multi-sheet template (Parameter + Node_{Type} + Edge_{Type} + Graph_{Type}),
+Reads the multi-sheet template (Parameter + Node/Edge/Graph data sheets),
 derives the user's intended task from Y rows in the Parameter sheet, and emits
 DataFrames ready for the PyG converter.
 
-Phase 2 scope (current):
+Two sheet layouts are supported (Phase 4 — 2026-04-24):
+
+1.  **Unified single-sheet layout (preferred for heterogeneous graphs)**
+        Node data lives in a single ``Node`` sheet with a ``Type`` column.
+        Every declared feature is a column; rows that don't carry a given
+        feature leave the cell blank. The same applies to ``Edge`` and
+        ``Graph`` sheets.
+
+2.  **Legacy per-type layout (still accepted for backwards compatibility)**
+        Each (Level, Type) pair lives in its own sheet, e.g. ``Node_cell``,
+        ``Node_pin``, ``Edge_cell2pin``.
+
+Scope:
     * Homogeneous and heterogeneous graphs both supported.
     * Y must be declared on exactly one Level (Node or Graph).
     * Edge-level prediction (Y on Edge) is still deferred.
 
 Heterogeneous Edge sheet convention:
-    In addition to Source_Node_ID / Target_Node_ID, edge sheets in hetero mode
-    declare Source_Node_Type / Target_Node_Type columns so (src_type, rel, dst_type)
-    canonical edges can be constructed. For homogeneous graphs these columns are
-    optional — the single declared node type is used by default.
+    In addition to Source_Node_ID / Target_Node_ID, edge rows in hetero mode
+    declare Source_Node_Type / Target_Node_Type columns so
+    (src_type, rel, dst_type) canonical edges can be constructed. For
+    homogeneous graphs these columns are optional — the single declared node
+    type is used by default.
 """
 from __future__ import annotations
 
@@ -167,15 +180,77 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
 
     y_level = spec.y_levels()[0]           # "Node" or "Graph"
 
-    def _resolve_all(level: str) -> dict[str, pd.DataFrame]:
-        """Return {type: DataFrame} for every declared Type on a Level."""
+    def _split_unified_by_type(unified: pd.DataFrame, level: str,
+                               declared_types: list[str]) -> dict[str, pd.DataFrame]:
+        """Split a single ``Node``/``Edge``/``Graph`` sheet by its Type column.
+
+        Columns declared for OTHER types in the Parameter sheet are dropped
+        from each per-type slice so downstream feature extraction doesn't
+        treat them as missing-data columns.
+        """
+        type_col = next(
+            (c for c in unified.columns if str(c).strip().lower() == "type"),
+            None,
+        )
+        if type_col is None:
+            raise ValueError(
+                f"Sheet '{level}' is missing a 'Type' column "
+                f"(required when using the unified single-sheet layout; "
+                f"expected types: {declared_types})."
+            )
+        if type_col != "Type":
+            unified = unified.rename(columns={type_col: "Type"})
+
+        declared_params_by_type: dict[str, set[str]] = {
+            t: {e.parameter for e in spec.entries_for(level, t)}
+            for t in declared_types
+        }
+        all_declared_params: set[str] = set().union(*declared_params_by_type.values())
+
         out: dict[str, pd.DataFrame] = {}
-        for t in spec.types_for_level(level):
+        for t in declared_types:
+            mask = unified["Type"].astype(str).str.strip() == t
+            sub = unified[mask].copy()
+            if sub.empty:
+                raise ValueError(
+                    f"Sheet '{level}' declares Type='{t}' in the Parameter "
+                    f"sheet but no rows with that Type value were found."
+                )
+            # Drop columns declared for OTHER types (they'd otherwise appear
+            # as all-NaN feature columns for this type).
+            other_only = {
+                p for p in all_declared_params if p not in declared_params_by_type[t]
+            }
+            drop_cols = [c for c in other_only if c in sub.columns]
+            if drop_cols:
+                sub = sub.drop(columns=drop_cols)
+            out[t] = sub.reset_index(drop=True)
+        return out
+
+    def _resolve_all(level: str) -> dict[str, pd.DataFrame]:
+        """Return {type: DataFrame} for every declared Type on a Level.
+
+        Prefers the unified single-sheet layout (``Node`` / ``Edge`` / ``Graph``
+        sheet with a ``Type`` column). Falls back to the legacy per-type
+        sheets (``Node_{type}`` / ``Edge_{type}`` / ``Graph_{type}``).
+        """
+        declared_types = spec.types_for_level(level)
+        if not declared_types:
+            return {}
+
+        # Preferred: unified single-sheet layout.
+        if level in sheets:
+            return _split_unified_by_type(sheets[level], level, declared_types)
+
+        # Legacy: one sheet per Type.
+        out: dict[str, pd.DataFrame] = {}
+        for t in declared_types:
             sheet_name = f"{level}_{t}"
             if sheet_name not in sheets:
                 raise ValueError(
-                    f"Parameter sheet declares Level={level} Type={t} but data "
-                    f"sheet '{sheet_name}' is missing."
+                    f"Parameter sheet declares Level={level} Type={t} but "
+                    f"neither a unified '{level}' sheet nor a per-type "
+                    f"'{sheet_name}' sheet is present in the workbook."
                 )
             out[t] = sheets[sheet_name]
         return out

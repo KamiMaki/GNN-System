@@ -40,6 +40,45 @@ def _graph_stats(df: pd.DataFrame) -> tuple[int, float]:
     return 1, float(len(df))
 
 
+NODE_COL_SKIP = {"_graph", "_node_type", "Type"}
+EDGE_COL_SKIP = {"_graph", "_edge_type", "src_type", "dst_type",
+                 "Edge_Type", "src_id", "dst_id"}
+
+
+def _column_entries(
+    df: pd.DataFrame,
+    skip: set[str],
+    *,
+    type_name: Optional[str] = None,
+    source: str = "node",
+) -> list[dict]:
+    """Emit a list of column-stat dicts from ``df``.
+
+    When ``type_name`` is provided the ``node_type`` / ``edge_type`` field is
+    attached so the UI can group columns by the type they belong to. Missing
+    counts are computed against ``len(df)`` — the rows of this *type* only —
+    so heterogeneous graphs don't over-report missing values when concatenated.
+    """
+    total = len(df)
+    out = []
+    for col in df.columns:
+        if col in skip:
+            continue
+        series = df[col]
+        missing = int(series.isna().sum())
+        entry = {
+            "name": col,
+            "dtype": detect_column_type(series),
+            "missing_count": missing,
+            "missing_pct": round((missing / total * 100) if total else 0.0, 2),
+            "unique_count": int(series.nunique()),
+        }
+        if type_name is not None:
+            entry[f"{source}_type"] = type_name
+        out.append(entry)
+    return out
+
+
 def compute_generic_explore(
     nodes_df: pd.DataFrame,
     edges_df: pd.DataFrame,
@@ -48,48 +87,49 @@ def compute_generic_explore(
     node_types: Optional[list[str]] = None,
     edge_types: Optional[list[str]] = None,
     canonical_edges: Optional[list] = None,
+    node_dfs: Optional[dict[str, pd.DataFrame]] = None,
+    edge_dfs: Optional[dict[str, pd.DataFrame]] = None,
 ) -> dict:
     """Compute generic exploration stats for an Excel-ingested dataset.
 
     Includes multi-graph summary (graph_count + avg_nodes_per_graph +
     avg_edges_per_graph) and heterogeneity metadata when available.
-    """
-    node_type_skip = {"_graph", "_node_type", "Type"}
-    edge_type_skip = {"_graph", "_edge_type", "src_type", "dst_type",
-                      "Edge_Type", "src_id", "dst_id"}
 
-    columns = []
-    for col in nodes_df.columns:
-        if col in node_type_skip:
-            continue
-        dtype = detect_column_type(nodes_df[col])
-        columns.append({
-            "name": col,
-            "dtype": dtype,
-            "missing_count": int(nodes_df[col].isna().sum()),
-            "missing_pct": round(float(nodes_df[col].isna().mean()) * 100, 2),
-            "unique_count": int(nodes_df[col].nunique()),
-        })
+    When ``node_dfs`` / ``edge_dfs`` are supplied (per-type DataFrames), the
+    column-stats block is computed PER TYPE so missing counts use the row
+    count of that type as the denominator. Without per-type input, stats fall
+    back to the unified DataFrames (legacy / homogeneous behaviour).
+    """
+    # ── Column stats ──
+    # In heterogeneous mode with per-type inputs, each (type, column) is a
+    # separate entry. In homogeneous mode, we use the unified frame.
+    if node_dfs:
+        columns: list[dict] = []
+        for t, df in node_dfs.items():
+            columns.extend(_column_entries(
+                df, NODE_COL_SKIP, type_name=t, source="node",
+            ))
+    else:
+        columns = _column_entries(nodes_df, NODE_COL_SKIP)
 
     numeric_cols = [c["name"] for c in columns
                     if c["dtype"] == "numeric" and c["name"].lower() not in ("node_id", "id", "index")]
+    # Deduplicate — a feature may appear under multiple types with the same name.
+    seen: set[str] = set()
+    numeric_cols = [n for n in numeric_cols if not (n in seen or seen.add(n))]
     if len(numeric_cols) > 5:
         variances = nodes_df[numeric_cols].var().sort_values(ascending=False)
         numeric_cols = list(variances.index[:5])
     correlation = compute_correlation(nodes_df, numeric_cols) if numeric_cols else []
 
-    edge_columns = []
-    for col in edges_df.columns:
-        if col in edge_type_skip:
-            continue
-        dtype = detect_column_type(edges_df[col])
-        edge_columns.append({
-            "name": col,
-            "dtype": dtype,
-            "missing_count": int(edges_df[col].isna().sum()),
-            "missing_pct": round(float(edges_df[col].isna().mean()) * 100, 2),
-            "unique_count": int(edges_df[col].nunique()),
-        })
+    if edge_dfs:
+        edge_columns: list[dict] = []
+        for t, df in edge_dfs.items():
+            edge_columns.extend(_column_entries(
+                df, EDGE_COL_SKIP, type_name=t, source="edge",
+            ))
+    else:
+        edge_columns = _column_entries(edges_df, EDGE_COL_SKIP)
 
     graph_count, avg_nodes = _graph_stats(nodes_df)
     _, avg_edges = _graph_stats(edges_df)

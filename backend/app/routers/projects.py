@@ -247,8 +247,12 @@ async def _store_excel_dataset(project_id: str, content: bytes, name: str) -> Da
         is_heterogeneous=is_hetero,
         node_types=node_types, edge_types=edge_types,
         canonical_edges=parsed["canonical_edges"],
+        node_dfs=parsed["node_dfs"] if is_hetero else None,
+        edge_dfs=parsed["edge_dfs"] if is_hetero else None,
     )
-    num_features = len([c for c in explore_stats["columns"] if c["dtype"] == "numeric"])
+    # Count unique numeric feature names (per-type entries with same name → one feature).
+    _numeric_names = {c["name"] for c in explore_stats["columns"] if c["dtype"] == "numeric"}
+    num_features = len(_numeric_names)
 
     dataset_id = str(uuid.uuid4())
     task_type = parsed["task_type"]
@@ -560,13 +564,21 @@ async def impute_missing_endpoint(project_id: str, body: ImputationRequest):
     project = _project_or_404(project_id)
     ds = _dataset_for_project(project)
     ds["nodes_df"], filled = impute_column(ds["nodes_df"], body.column, body.method)
+    # Also update matching per-type frame(s) so hetero explore stats stay in sync.
+    _is_hetero = ds.get("is_heterogeneous", False)
+    if _is_hetero:
+        for _t, _tdf in (ds.get("node_dfs") or {}).items():
+            if body.column in _tdf.columns:
+                ds["node_dfs"][_t], _ = impute_column(_tdf, body.column, body.method)
     # Refresh explore stats
     ds["explore_stats"] = compute_generic_explore(
         ds["nodes_df"], ds["edges_df"],
-        is_heterogeneous=ds.get("is_heterogeneous", False),
+        is_heterogeneous=_is_hetero,
         node_types=ds.get("node_types", []),
         edge_types=ds.get("edge_types", []),
         canonical_edges=ds.get("canonical_edges", []),
+        node_dfs=ds.get("node_dfs") if _is_hetero else None,
+        edge_dfs=ds.get("edge_dfs") if _is_hetero else None,
     )
     store.put_dataset(ds["dataset_id"], ds)
     log = store.get_project(project_id).get("imputation_log", [])
