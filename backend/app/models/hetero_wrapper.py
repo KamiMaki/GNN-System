@@ -32,11 +32,18 @@ class _HomoBackbone(nn.Module):
             "gat": GATConv,
             "sage": SAGEConv,
         }[conv]
+        # to_hetero() duplicates each conv per relation. GCNConv / GATConv
+        # default to ``add_self_loops=True`` which is invalid when an edge
+        # connects two different node types (source != target). Force it
+        # off so the lift works across cross-type relations.
+        extra: dict = {}
+        if conv in ("gcn", "gat"):
+            extra["add_self_loops"] = False
         self.convs = nn.ModuleList()
         # First conv goes from -1 (lazy init so to_hetero can wire per-type dims)
-        self.convs.append(conv_cls(-1, hidden_dim))
+        self.convs.append(conv_cls(-1, hidden_dim, **extra))
         for _ in range(num_layers - 1):
-            self.convs.append(conv_cls(hidden_dim, hidden_dim))
+            self.convs.append(conv_cls(hidden_dim, hidden_dim, **extra))
         self.dropout = dropout
 
     def forward(self, x, edge_index):

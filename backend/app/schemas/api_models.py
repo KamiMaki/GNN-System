@@ -58,6 +58,9 @@ class ColumnInfo(BaseModel):
     missing_count: int
     missing_pct: float
     unique_count: int
+    # Populated for heterogeneous graphs (one entry per (type, column)).
+    node_type: Optional[str] = None
+    edge_type: Optional[str] = None
 
 
 class GenericExploreData(BaseModel):

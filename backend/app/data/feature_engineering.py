@@ -40,9 +40,11 @@ def _graph_stats(df: pd.DataFrame) -> tuple[int, float]:
     return 1, float(len(df))
 
 
-NODE_COL_SKIP = {"_graph", "_node_type", "Type"}
+NODE_COL_SKIP = {"_graph", "_node_type", "Type", "Graph_ID", "Node"}
 EDGE_COL_SKIP = {"_graph", "_edge_type", "src_type", "dst_type",
-                 "Edge_Type", "src_id", "dst_id"}
+                 "Edge_Type", "Type", "src_id", "dst_id",
+                 "Graph_ID", "Source_Node_ID", "Target_Node_ID",
+                 "Source_Node_Type", "Target_Node_Type"}
 
 
 def _column_entries(
