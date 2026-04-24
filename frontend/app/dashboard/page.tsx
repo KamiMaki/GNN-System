@@ -393,8 +393,8 @@ export default function DashboardPage() {
                         value={view}
                         onChange={handleViewChange}
                         options={[
-                            { value: 'grid', icon: <AppstoreOutlined />, label: 'Grid' },
-                            { value: 'list', icon: <UnorderedListOutlined />, label: 'List' },
+                            { value: 'grid', label: <span><AppstoreOutlined /> Grid</span> },
+                            { value: 'list', label: <span><UnorderedListOutlined /> List</span> },
                         ]}
                         size="large"
                     />
