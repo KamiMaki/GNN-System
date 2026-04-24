@@ -5,9 +5,11 @@ import { useParams, useRouter } from 'next/navigation';
 import { sanitizeParam } from '@/lib/sanitize';
 import {
     Button, Card, Tag, Select, Checkbox, Alert, Spin, Segmented, Space, Table, Typography, Row, Col, Statistic, theme,
+    Modal, Badge, List,
 } from 'antd';
 import {
     CheckCircleOutlined, WarningOutlined, ArrowRightOutlined, ExperimentOutlined,
+    ExpandAltOutlined, CloseCircleOutlined,
 } from '@ant-design/icons';
 
 import {
@@ -63,6 +65,7 @@ export default function ExplorePage() {
     const [graphSample, setGraphSample] = useState<GraphSampleData | null>(null);
     const [graphSampleLoading, setGraphSampleLoading] = useState(false);
     const [selectedGraph, setSelectedGraph] = useState<string | undefined>(undefined);
+    const [graphFullscreen, setGraphFullscreen] = useState(false);
 
     const fetchGraphSample = useCallback((graphName?: string) => {
         if (!projectId) return;
@@ -383,21 +386,36 @@ export default function ExplorePage() {
                 <Card
                     title="Interactive Graph Preview"
                     extra={
-                        graphSample?.graph_names && graphSample.graph_names.length > 0 ? (
-                            <Select
-                                value={selectedGraph}
-                                onChange={(v) => {
-                                    setSelectedGraph(v);
-                                    setGraphSampleLoading(true);
-                                    getProjectGraphSample(projectId, 500, v)
-                                        .then(setGraphSample)
-                                        .catch(console.error)
-                                        .finally(() => setGraphSampleLoading(false));
-                                }}
-                                style={{ minWidth: 180 }}
-                                options={graphSample.graph_names.map(g => ({ value: g, label: g }))}
-                            />
-                        ) : null
+                        <Space>
+                            {graphSample?.graph_names && graphSample.graph_names.length > 0 && (
+                                <Select
+                                    showSearch
+                                    value={selectedGraph}
+                                    onChange={(v) => {
+                                        setSelectedGraph(v);
+                                        setGraphSampleLoading(true);
+                                        getProjectGraphSample(projectId, 500, v)
+                                            .then(setGraphSample)
+                                            .catch(console.error)
+                                            .finally(() => setGraphSampleLoading(false));
+                                    }}
+                                    style={{ minWidth: 200 }}
+                                    options={graphSample.graph_names.map(g => ({ value: g, label: g }))}
+                                    filterOption={(input, opt) =>
+                                        (opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                                    }
+                                />
+                            )}
+                            <Button
+                                type="text"
+                                icon={<ExpandAltOutlined />}
+                                onClick={() => setGraphFullscreen(true)}
+                                disabled={!graphSample || graphSample.nodes.length === 0}
+                                title="Open fullscreen inspector"
+                            >
+                                Fullscreen
+                            </Button>
+                        </Space>
                     }
                 >
                     {graphSampleLoading ? (
@@ -416,6 +434,43 @@ export default function ExplorePage() {
                         <Alert type="info" showIcon message="No graph data available for preview." />
                     )}
                 </Card>
+
+                {/* Fullscreen Graph Inspector — click ⛶ on the preview card to expand.
+                    Uses the same GraphPreview component at a larger height. */}
+                <Modal
+                    open={graphFullscreen}
+                    onCancel={() => setGraphFullscreen(false)}
+                    footer={null}
+                    width="95vw"
+                    style={{ top: 16 }}
+                    styles={{ body: { height: 'calc(100vh - 120px)', padding: 16 } }}
+                    title={
+                        <Space>
+                            <ExpandAltOutlined />
+                            <span>Graph Inspector</span>
+                            {graphSample?.current_graph && <Tag>{graphSample.current_graph}</Tag>}
+                            {graphSample && (
+                                <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+                                    {graphSample.num_nodes_total.toLocaleString()} nodes · {graphSample.num_edges_total.toLocaleString()} edges
+                                </Text>
+                            )}
+                        </Space>
+                    }
+                    destroyOnClose
+                >
+                    {graphSample && graphSample.nodes.length > 0 && (
+                        <GraphPreview graphSample={graphSample} height={Math.max(480, typeof window !== 'undefined' ? window.innerHeight - 220 : 640)} />
+                    )}
+                </Modal>
+
+                {/* SECTION: DATA QUALITY — graph-specific structural checks (v2) */}
+                <DataQualityCard
+                    exploreData={exploreData}
+                    graphSample={graphSample}
+                    taskType={taskType}
+                    labelColumn={labelColumn}
+                    labelValidation={labelValidation}
+                />
 
                 {/* SECTION II: NODE ANALYSIS */}
                 <Card title="II. Node Analysis">
@@ -684,5 +739,264 @@ export default function ExplorePage() {
                 </Button>
             </Space>
         </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════
+// Data Quality — graph-specific structural checks per v2 design.
+// Derives ok/warn/err/na for each check from exploreData + graphSample
+// (server-side explore response + a client-side sample of nodes/edges).
+// Fields not yet exposed by the backend are rendered as "—" (na).
+// ════════════════════════════════════════════════════════════════
+
+type QualityStatus = 'ok' | 'warn' | 'err' | 'na';
+interface QualityCheck {
+    key: string;
+    label: string;
+    status: QualityStatus;
+    detail: string;
+}
+
+function deriveQualityChecks(
+    exploreData: GenericExploreData | null,
+    graphSample: GraphSampleData | null,
+    taskType: string,
+    labelColumn: string,
+    labelValidation: LabelValidationResult | null,
+): QualityCheck[] {
+    const checks: QualityCheck[] = [];
+
+    // 1. Connected components (homogeneous: target = 1, heterogeneous: just report)
+    if (graphSample && graphSample.nodes.length > 0) {
+        const parent: Record<string, string> = {};
+        const find = (x: string): string => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+        graphSample.nodes.forEach(n => { parent[n.id] = n.id; });
+        graphSample.edges.forEach(e => {
+            if (parent[e.source] && parent[e.target]) {
+                const a = find(e.source); const b = find(e.target);
+                if (a !== b) parent[a] = b;
+            }
+        });
+        const components = new Set(graphSample.nodes.map(n => find(n.id))).size;
+        const status: QualityStatus = components === 1 ? 'ok' : components <= 3 ? 'warn' : 'err';
+        checks.push({
+            key: 'components', label: 'Connected components',
+            status, detail: `${components} component(s) in sample`,
+        });
+    } else {
+        checks.push({ key: 'components', label: 'Connected components', status: 'na', detail: '—' });
+    }
+
+    // 2. Isolated nodes
+    if (graphSample && graphSample.nodes.length > 0) {
+        const touched = new Set<string>();
+        graphSample.edges.forEach(e => { touched.add(e.source); touched.add(e.target); });
+        const isolated = graphSample.nodes.filter(n => !touched.has(n.id)).length;
+        const status: QualityStatus = isolated === 0 ? 'ok' : isolated < 5 ? 'warn' : 'err';
+        checks.push({ key: 'isolated', label: 'Isolated nodes', status, detail: `${isolated} in sample` });
+    } else {
+        checks.push({ key: 'isolated', label: 'Isolated nodes', status: 'na', detail: '—' });
+    }
+
+    // 3. Self-loops
+    if (graphSample) {
+        const selfLoops = graphSample.edges.filter(e => e.source === e.target).length;
+        const status: QualityStatus = selfLoops === 0 ? 'ok' : 'warn';
+        checks.push({ key: 'selfloops', label: 'Self-loops', status, detail: `${selfLoops} detected` });
+    } else {
+        checks.push({ key: 'selfloops', label: 'Self-loops', status: 'na', detail: '—' });
+    }
+
+    // 4. Duplicate edges (client-side over the sample — approximate)
+    if (graphSample) {
+        const seen = new Set<string>();
+        let dupes = 0;
+        graphSample.edges.forEach(e => {
+            const k = `${e.source}→${e.target}|${e.edge_type ?? ''}`;
+            if (seen.has(k)) dupes += 1; else seen.add(k);
+        });
+        const status: QualityStatus = dupes === 0 ? 'ok' : dupes < 10 ? 'warn' : 'err';
+        checks.push({ key: 'duplicates', label: 'Duplicate edges', status, detail: `${dupes} in sample` });
+    } else {
+        checks.push({ key: 'duplicates', label: 'Duplicate edges', status: 'na', detail: '—' });
+    }
+
+    // 5. Heterogeneous vs homogeneous
+    if (exploreData) {
+        const hetero = exploreData.is_heterogeneous;
+        checks.push({
+            key: 'hetero', label: 'Graph schema',
+            status: 'ok',
+            detail: hetero
+                ? `Heterogeneous · ${exploreData.node_types.length} node types · ${exploreData.edge_types.length} edge types`
+                : 'Homogeneous',
+        });
+    }
+
+    // 6. NaN / Inf in node features — use missing_count from columns
+    if (exploreData) {
+        const missingTotal = exploreData.columns.reduce((s, c) => s + (c.missing_count || 0), 0);
+        const status: QualityStatus = missingTotal === 0 ? 'ok' : missingTotal < 50 ? 'warn' : 'err';
+        checks.push({
+            key: 'nan', label: 'Feature NaN / missing',
+            status, detail: `${missingTotal} missing cell(s) across ${exploreData.columns.length} cols`,
+        });
+    }
+
+    // 7. Label leakage — warn if labelColumn appears in a correlation pair with value ≈ 1
+    if (labelColumn && exploreData) {
+        const suspicious = exploreData.feature_correlation.find(c =>
+            (c.x === labelColumn || c.y === labelColumn) && Math.abs(c.value) >= 0.98 && c.x !== c.y
+        );
+        checks.push({
+            key: 'leakage', label: 'Label leakage',
+            status: suspicious ? 'err' : 'ok',
+            detail: suspicious
+                ? `Feature "${suspicious.x === labelColumn ? suspicious.y : suspicious.x}" ≈ ${suspicious.value.toFixed(2)}`
+                : 'No near-perfect feature↔label correlation',
+        });
+    } else {
+        checks.push({ key: 'leakage', label: 'Label leakage', status: 'na', detail: 'Pick a label column' });
+    }
+
+    // 8. Degree distribution (from sample)
+    if (graphSample && graphSample.nodes.length > 0) {
+        const deg: Record<string, number> = {};
+        graphSample.nodes.forEach(n => { deg[n.id] = 0; });
+        graphSample.edges.forEach(e => {
+            if (deg[e.source] !== undefined) deg[e.source] += 1;
+            if (deg[e.target] !== undefined) deg[e.target] += 1;
+        });
+        const values = Object.values(deg);
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const avg = values.reduce((s, v) => s + v, 0) / values.length;
+        const status: QualityStatus = max / (avg || 1) > 50 ? 'warn' : 'ok';
+        checks.push({
+            key: 'degree', label: 'Degree distribution',
+            status, detail: `min ${min} · avg ${avg.toFixed(1)} · max ${max}`,
+        });
+    } else {
+        checks.push({ key: 'degree', label: 'Degree distribution', status: 'na', detail: '—' });
+    }
+
+    // 9. Edge attribute coverage
+    if (graphSample && graphSample.edges.length > 0) {
+        const firstEdge = graphSample.edges[0];
+        const attrKeys = Object.keys(firstEdge.attributes || {});
+        if (attrKeys.length === 0) {
+            checks.push({ key: 'edgeattr', label: 'Edge attributes', status: 'warn', detail: 'None present' });
+        } else {
+            const covered = graphSample.edges.filter(e =>
+                attrKeys.every(k => e.attributes[k] != null)
+            ).length;
+            const pct = (covered / graphSample.edges.length) * 100;
+            const status: QualityStatus = pct >= 99 ? 'ok' : pct >= 90 ? 'warn' : 'err';
+            checks.push({ key: 'edgeattr', label: 'Edge attr coverage', status, detail: `${pct.toFixed(1)}% complete` });
+        }
+    } else {
+        checks.push({ key: 'edgeattr', label: 'Edge attributes', status: 'na', detail: '—' });
+    }
+
+    // 10. Multi-graph count
+    if (exploreData) {
+        const count = exploreData.graph_count;
+        checks.push({
+            key: 'graphcount', label: 'Graph count',
+            status: 'ok',
+            detail: count === 1 ? 'Single graph' : `${count} graphs in dataset`,
+        });
+    }
+
+    // 11. Class imbalance (classification) / Range (regression)
+    if (taskType && labelValidation) {
+        if (taskType.endsWith('classification') && labelValidation.class_distribution) {
+            const counts = labelValidation.class_distribution.map(c => c.count);
+            const imbalance = Math.max(...counts) / (Math.min(...counts) || 1);
+            const status: QualityStatus = imbalance < 3 ? 'ok' : imbalance < 10 ? 'warn' : 'err';
+            checks.push({
+                key: 'imbalance', label: 'Class imbalance',
+                status, detail: `max/min ratio = ${imbalance.toFixed(1)}`,
+            });
+        } else if (taskType.endsWith('regression') && labelValidation.value_range) {
+            const r = labelValidation.value_range;
+            checks.push({
+                key: 'range', label: 'Target range',
+                status: 'ok', detail: `μ=${r.mean.toFixed(2)} σ=${r.std.toFixed(2)} · [${r.min.toFixed(2)}, ${r.max.toFixed(2)}]`,
+            });
+        }
+    } else {
+        checks.push({ key: 'imbalance', label: 'Class balance / target range', status: 'na', detail: 'Pick task type' });
+    }
+
+    // 12. Train/val/test split presence — not exposed yet by backend
+    checks.push({
+        key: 'split', label: 'Train/val/test split',
+        status: 'na',
+        detail: 'Set automatically at training time',
+    });
+
+    return checks;
+}
+
+interface DataQualityCardProps {
+    exploreData: GenericExploreData | null;
+    graphSample: GraphSampleData | null;
+    taskType: string;
+    labelColumn: string;
+    labelValidation: LabelValidationResult | null;
+}
+
+function DataQualityCard({ exploreData, graphSample, taskType, labelColumn, labelValidation }: DataQualityCardProps) {
+    const { token } = theme.useToken();
+    const checks = React.useMemo(
+        () => deriveQualityChecks(exploreData, graphSample, taskType, labelColumn, labelValidation),
+        [exploreData, graphSample, taskType, labelColumn, labelValidation]
+    );
+
+    const summary = checks.reduce((acc, c) => {
+        acc[c.status] = (acc[c.status] || 0) + 1;
+        return acc;
+    }, {} as Record<QualityStatus, number>);
+
+    const statusToColor: Record<QualityStatus, string> = {
+        ok: token.colorSuccess,
+        warn: token.colorWarning,
+        err: token.colorError,
+        na: token.colorTextDisabled,
+    };
+
+    const statusIcon = (s: QualityStatus) => {
+        if (s === 'ok') return <CheckCircleOutlined style={{ color: statusToColor.ok }} />;
+        if (s === 'warn') return <WarningOutlined style={{ color: statusToColor.warn }} />;
+        if (s === 'err') return <CloseCircleOutlined style={{ color: statusToColor.err }} />;
+        return <span style={{ color: statusToColor.na, fontSize: 14 }}>—</span>;
+    };
+
+    return (
+        <Card
+            title="Data Quality · Graph-level checks"
+            extra={
+                <Space size={6}>
+                    <Badge count={summary.ok || 0} style={{ backgroundColor: statusToColor.ok }} />
+                    <Badge count={summary.warn || 0} style={{ backgroundColor: statusToColor.warn }} />
+                    <Badge count={summary.err || 0} style={{ backgroundColor: statusToColor.err }} />
+                </Space>
+            }
+        >
+            <List
+                size="small"
+                dataSource={checks}
+                renderItem={(c) => (
+                    <List.Item key={c.key}>
+                        <Space size="middle" style={{ width: '100%' }}>
+                            {statusIcon(c.status)}
+                            <Typography.Text strong style={{ minWidth: 180 }}>{c.label}</Typography.Text>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{c.detail}</Typography.Text>
+                        </Space>
+                    </List.Item>
+                )}
+            />
+        </Card>
     );
 }
