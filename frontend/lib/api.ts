@@ -55,6 +55,7 @@ export interface SplitMetrics {
   mse: number | null;
   mae: number | null;
   r2_score: number | null;
+  mape?: number | null;
 }
 
 export interface BestConfig {
@@ -217,7 +218,7 @@ export interface Report {
   test_metrics: SplitMetrics;
   history: Array<{ epoch: number; loss: number; val_loss: number; accuracy?: number; lr?: number }>;
   confusion_matrix: ConfusionMatrix | null;
-  residual_data?: Array<{ actual: number; predicted: number }>;
+  residual_data?: Array<{ actual: number; predicted: number; error: number }>;
   node_predictions?: NodePrediction[];
   best_config?: BestConfig;
   leaderboard?: LeaderboardEntry[];

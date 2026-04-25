@@ -8,7 +8,7 @@ import { TrophyOutlined, RocketOutlined, ArrowRightOutlined, CheckCircleOutlined
 
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-    ScatterChart, Scatter,
+    ScatterChart, Scatter, ReferenceLine,
 } from 'recharts';
 
 import { getProjectReport, getExperimentReport, Report, SplitMetrics, NodePrediction } from '@/lib/api';
@@ -45,9 +45,17 @@ function MetricsRow({ label, metrics }: { label: string; metrics: SplitMetrics }
                     </>
                 ) : (
                     <>
-                        <Col xs={12} sm={8}><MetricCard label="MSE" value={metrics.mse} /></Col>
-                        <Col xs={12} sm={8}><MetricCard label="MAE" value={metrics.mae} /></Col>
-                        <Col xs={12} sm={8}><MetricCard label="R² Score" value={metrics.r2_score} /></Col>
+                        <Col xs={12} sm={6}><MetricCard label="MSE" value={metrics.mse} /></Col>
+                        <Col xs={12} sm={6}><MetricCard label="MAE" value={metrics.mae} /></Col>
+                        <Col xs={12} sm={6}><MetricCard label="R² Score" value={metrics.r2_score} /></Col>
+                        <Col xs={12} sm={6}>
+                            <Card size="small">
+                                <Statistic
+                                    title="MAPE"
+                                    value={metrics.mape == null ? 'N/A' : `${(metrics.mape * 100).toFixed(2)}%`}
+                                />
+                            </Card>
+                        </Col>
                     </>
                 )}
             </Row>
@@ -353,19 +361,23 @@ export default function EvaluatePage() {
                 )}
 
                 {/* Residual Plot */}
-                {!isClassification && report.residual_data && report.residual_data.length > 0 && (
-                    <Card title="Residual Plot (Actual vs Predicted)">
-                        <ResponsiveContainer width="100%" height={350}>
-                            <ScatterChart>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="actual" name="Actual" tick={{ fontSize: 11 }} label={{ value: 'Actual', position: 'bottom' }} />
-                                <YAxis dataKey="predicted" name="Predicted" tick={{ fontSize: 11 }} label={{ value: 'Predicted', angle: -90, position: 'left' }} />
-                                <Tooltip />
-                                <Scatter data={report.residual_data} fill={token.colorPrimary} opacity={0.6} />
-                            </ScatterChart>
-                        </ResponsiveContainer>
-                    </Card>
-                )}
+                {!isClassification && report.residual_data && report.residual_data.length > 0 && (() => {
+                    const maxAbs = Math.max(...report.residual_data.map((d) => Math.abs(d.error ?? 0))) || 1;
+                    return (
+                        <Card title="Residual Plot (Error vs Predicted)">
+                            <ResponsiveContainer width="100%" height={350}>
+                                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis type="number" dataKey="predicted" name="Predicted" tick={{ fontSize: 11 }} label={{ value: 'Predicted', position: 'insideBottom', offset: -10 }} />
+                                    <YAxis type="number" dataKey="error" name="Error" domain={[-maxAbs, maxAbs]} tick={{ fontSize: 11 }} label={{ value: 'Error', angle: -90, position: 'insideLeft' }} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                    <ReferenceLine y={0} stroke="red" strokeDasharray="3 3" />
+                                    <Scatter data={report.residual_data} fill={token.colorPrimary} opacity={0.6} />
+                                </ScatterChart>
+                            </ResponsiveContainer>
+                        </Card>
+                    );
+                })()}
 
                 {/* Training History */}
                 {report.history && report.history.length > 0 && (
