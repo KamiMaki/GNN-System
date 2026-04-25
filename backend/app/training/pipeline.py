@@ -31,6 +31,7 @@ import pytorch_lightning as pl
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score,
+    mean_absolute_percentage_error,
     confusion_matrix as sklearn_confusion_matrix,
 )
 from torch_geometric.loader import DataLoader
@@ -50,10 +51,13 @@ log = logging.getLogger(__name__)
 # ── metric helpers ────────────────────────────────────────────────────────
 
 def _regression_metrics(y_true, y_pred) -> dict:
+    arr = np.asarray(y_true)
+    mape = None if (arr == 0).any() else round(float(mean_absolute_percentage_error(y_true, y_pred)), 4)
     return {
         "mse": round(float(mean_squared_error(y_true, y_pred)), 4),
         "mae": round(float(mean_absolute_error(y_true, y_pred)), 4),
         "r2_score": round(float(r2_score(y_true, y_pred)), 4),
+        "mape": mape,
     }
 
 
@@ -368,7 +372,11 @@ def run_training_task(task_id: str) -> None:
             test_metrics = _regression_metrics(test_y, test_preds)
             cm = None
             residual = [
-                {"actual": round(float(test_y[i]), 4), "predicted": round(float(test_preds[i]), 4)}
+                {
+                    "actual": round(float(test_y[i]), 4),
+                    "predicted": round(float(test_preds[i]), 4),
+                    "error": round(float(test_y[i] - test_preds[i]), 4),
+                }
                 for i in range(min(500, len(test_y)))
             ]
         else:

@@ -159,6 +159,7 @@ class SplitMetrics(BaseModel):
     mse: Optional[float] = None
     mae: Optional[float] = None
     r2_score: Optional[float] = None
+    mape: Optional[float] = None
 
 
 class TaskResults(BaseModel):
