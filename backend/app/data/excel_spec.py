@@ -100,6 +100,23 @@ class ExcelGraphSpec:
         }
 
 
+def validate_single_type_per_level(spec: "ExcelGraphSpec") -> None:
+    """Raise ValueError if any Level declares more than one distinct Type.
+
+    Heterogeneous graphs are no longer supported (2026-04-25).
+    The Parameter sheet may still carry a Type column, but each Level
+    must declare exactly one Type value.
+    """
+    for level in VALID_LEVELS:
+        types = spec.types_for_level(level)
+        if len(types) > 1:
+            raise ValueError(
+                f"Heterogeneous graphs are no longer supported (2026-04-25). "
+                f"Parameter sheet declares multiple types for Level={level}: {types}. "
+                f"Use a single Type value per level."
+            )
+
+
 def parse_parameter_sheet(df: pd.DataFrame) -> ExcelGraphSpec:
     """Validate and parse the Parameter sheet DataFrame into an ExcelGraphSpec."""
     if df is None or df.empty:

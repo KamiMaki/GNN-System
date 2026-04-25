@@ -1,4 +1,9 @@
-"""Tests for Excel template ingestion (Phase 1)."""
+"""Tests for Excel template ingestion (V2 simplified schema — 2026-04-25).
+
+Schema: one sheet per level (Node / Edge / Graph), no Type column in data sheets,
+homogeneous only.  Parameter sheet still has a Type column but must declare a
+single Type per Level.
+"""
 from __future__ import annotations
 
 import io
@@ -30,7 +35,6 @@ def _node_y_classification_workbook() -> bytes:
     nodes = pd.DataFrame({
         "Graph_ID": [1] * 5,
         "Node": [0, 1, 2, 3, 4],
-        "Type": ["default"] * 5,
         "X_1": [0.1, 0.2, 0.3, 0.4, 0.5],
         "X_2": [1.0, 2.0, 3.0, 4.0, 5.0],
         "label": [0, 1, 0, 1, 0],
@@ -39,13 +43,12 @@ def _node_y_classification_workbook() -> bytes:
         "Graph_ID": [1, 1],
         "Source_Node_ID": [0, 1],
         "Target_Node_ID": [1, 2],
-        "Edge_Type": ["default"] * 2,
         "E_1": [0.5, 0.7],
     })
     return _build_workbook({
         "Parameter": parameter,
-        "Node_default": nodes,
-        "Edge_default": edges,
+        "Node": nodes,
+        "Edge": edges,
     })
 
 
@@ -58,7 +61,6 @@ def _graph_y_regression_workbook() -> bytes:
     nodes = pd.DataFrame({
         "Graph_ID": [1, 1, 2, 2],
         "Node": [0, 1, 0, 1],
-        "Type": ["default"] * 4,
         "X_1": [0.1, 0.2, 0.3, 0.4],
     })
     graph = pd.DataFrame({
@@ -68,8 +70,8 @@ def _graph_y_regression_workbook() -> bytes:
     })
     return _build_workbook({
         "Parameter": parameter,
-        "Node_default": nodes,
-        "Graph_default": graph,
+        "Node": nodes,
+        "Graph": graph,
     })
 
 
@@ -143,6 +145,7 @@ def test_parse_excel_node_classification():
     assert "src_id" in result["edges_df"].columns
     assert "dst_id" in result["edges_df"].columns
     assert len(result["nodes_df"]) == 5
+    assert result["is_heterogeneous"] is False
 
 
 def test_parse_excel_graph_regression():
@@ -151,10 +154,11 @@ def test_parse_excel_graph_regression():
     assert result["label_column"] == "graph_score"
     assert result["label_weight"] == 1.0  # default when Weight blank
     assert result["graph_df"] is not None
+    assert result["is_heterogeneous"] is False
 
 
 def test_parse_excel_missing_parameter_sheet():
-    bad = _build_workbook({"Node_default": pd.DataFrame({"Node": [0]})})
+    bad = _build_workbook({"Node": pd.DataFrame({"Node": [0]})})
     with pytest.raises(ValueError, match="missing the required 'Parameter' sheet"):
         parse_excel_file(bad)
 
@@ -169,7 +173,7 @@ def test_parse_excel_edge_y_deferred():
         "Source_Node_ID": [0], "Target_Node_ID": [1], "edge_label": [1],
     })
     wb = _build_workbook({
-        "Parameter": parameter, "Node_default": nodes, "Edge_default": edges,
+        "Parameter": parameter, "Node": nodes, "Edge": edges,
     })
     with pytest.raises(ValueError, match="Edge-level prediction"):
         parse_excel_file(wb)
@@ -190,65 +194,11 @@ def test_parse_excel_multi_y_levels_deferred():
     graph = pd.DataFrame({"Graph_ID": [1], "graph_label": [1]})
     wb = _build_workbook({
         "Parameter": parameter,
-        "Node_default": nodes,
-        "Graph_default": graph,
+        "Node": nodes,
+        "Graph": graph,
     })
     with pytest.raises(ValueError, match="Multi-task"):
         parse_excel_file(wb)
-
-
-def test_parse_excel_heterogeneous_is_supported():
-    """Phase 2: multiple Types per Level now accepted (heterogeneous graph)."""
-    parameter = pd.DataFrame([
-        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "X_1"},
-        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "X_2"},
-        {"XY": "X", "Level": "Edge", "Type": "cell2pin", "Parameter": "w"},
-        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "score"},
-    ])
-    nodes_cell = pd.DataFrame({"Graph_ID": [1, 1], "Node": [0, 1], "X_1": [0.1, 0.2]})
-    nodes_pin = pd.DataFrame({"Graph_ID": [1, 1], "Node": [2, 3], "X_2": [0.3, 0.4]})
-    edges = pd.DataFrame({
-        "Graph_ID": [1], "Source_Node_ID": [0], "Target_Node_ID": [2],
-        "Source_Node_Type": ["cell"], "Target_Node_Type": ["pin"], "w": [0.5],
-    })
-    graph = pd.DataFrame({"Graph_ID": [1], "score": [1.5]})
-    wb = _build_workbook({
-        "Parameter": parameter,
-        "Node_cell": nodes_cell,
-        "Node_pin": nodes_pin,
-        "Edge_cell2pin": edges,
-        "Graph_default": graph,
-    })
-    result = parse_excel_file(wb)
-    assert result["is_heterogeneous"] is True
-    assert set(result["node_dfs"].keys()) == {"cell", "pin"}
-    assert set(result["edge_dfs"].keys()) == {"cell2pin"}
-    assert result["canonical_edges"] == [("cell", "cell2pin", "pin")]
-    assert result["task_type"] == "graph_regression"
-    assert result["label_column"] == "score"
-    # Unified views still populated.
-    assert len(result["nodes_df"]) == 4
-
-
-def test_parse_excel_hetero_edge_defaults_to_single_node_type():
-    """Homogeneous edges without explicit src/dst_type columns default to the node type."""
-    parameter = pd.DataFrame([
-        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
-        {"XY": "X", "Level": "Edge", "Type": "default", "Parameter": "w"},
-        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y"},
-    ])
-    nodes = pd.DataFrame({"Graph_ID": [1, 1], "Node": [0, 1], "X_1": [0.1, 0.2]})
-    edges = pd.DataFrame({
-        "Graph_ID": [1], "Source_Node_ID": [0], "Target_Node_ID": [1], "w": [0.5],
-    })
-    graph = pd.DataFrame({"Graph_ID": [1], "y": [0.9]})
-    wb = _build_workbook({
-        "Parameter": parameter, "Node_default": nodes,
-        "Edge_default": edges, "Graph_default": graph,
-    })
-    result = parse_excel_file(wb)
-    assert result["is_heterogeneous"] is False
-    assert result["canonical_edges"] == [("default", "default", "default")]
 
 
 def test_parse_excel_no_y_raises():
@@ -256,19 +206,18 @@ def test_parse_excel_no_y_raises():
         {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
     ])
     nodes = pd.DataFrame({"Node": [0], "X_1": [0.1]})
-    wb = _build_workbook({"Parameter": parameter, "Node_default": nodes})
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes})
     with pytest.raises(ValueError, match="at least one Y row"):
         parse_excel_file(wb)
 
 
-def test_parse_excel_missing_data_sheet():
+def test_parse_excel_missing_node_sheet():
     parameter = pd.DataFrame([
         {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
         {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "label"},
     ])
-    # No Node_default sheet
     wb = _build_workbook({"Parameter": parameter})
-    with pytest.raises(ValueError, match="Node_default"):
+    with pytest.raises(ValueError, match="'Node' sheet"):
         parse_excel_file(wb)
 
 
@@ -279,7 +228,7 @@ def test_parse_excel_label_column_missing_in_data():
     ])
     # Data sheet exists but lacks declared label column
     nodes = pd.DataFrame({"Node": [0], "X_1": [0.1]})
-    wb = _build_workbook({"Parameter": parameter, "Node_default": nodes})
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes})
     with pytest.raises(ValueError, match="Label column 'label'"):
         parse_excel_file(wb)
 
@@ -294,80 +243,65 @@ def test_parse_excel_continuous_node_y_is_regression():
         "X_1": [0.1, 0.2, 0.3, 0.4],
         "score": [0.15, 0.42, -0.33, 1.7],  # non-integer → regression
     })
-    wb = _build_workbook({"Parameter": parameter, "Node_default": nodes})
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes})
     result = parse_excel_file(wb)
     assert result["task_type"] == "node_regression"
 
 
-# ── Unified single-sheet layout (new in 2026-04-24) ────────────────────
+# ── New tests for simplified V2 schema (2026-04-25) ───────────────
 
-def test_parse_excel_hetero_unified_single_sheet():
-    """A single `Node` / `Edge` sheet with a Type column should split correctly."""
+
+def test_single_sheet_homogeneous():
+    """Node/Edge/Graph sheets without Type column, single-type Parameter → success."""
     parameter = pd.DataFrame([
-        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "cell_area"},
-        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "pin_cap"},
-        {"XY": "X", "Level": "Edge", "Type": "cell2pin", "Parameter": "c2p_delay"},
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "feat_a"},
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "feat_b"},
+        {"XY": "X", "Level": "Edge", "Type": "default", "Parameter": "weight"},
         {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "score"},
     ])
-    # Unified node sheet: cell rows leave pin_cap blank, pin rows leave cell_area blank.
-    nodes = pd.DataFrame([
-        {"Graph_ID": 1, "Node": 0, "Type": "cell", "cell_area": 1.2, "pin_cap": None},
-        {"Graph_ID": 1, "Node": 1, "Type": "cell", "cell_area": 2.3, "pin_cap": None},
-        {"Graph_ID": 1, "Node": 2, "Type": "pin", "cell_area": None, "pin_cap": 0.4},
-        {"Graph_ID": 1, "Node": 3, "Type": "pin", "cell_area": None, "pin_cap": 0.5},
-    ])
-    edges = pd.DataFrame([
-        {"Graph_ID": 1, "Source_Node_ID": 0, "Target_Node_ID": 2,
-         "Source_Node_Type": "cell", "Target_Node_Type": "pin",
-         "Type": "cell2pin", "c2p_delay": 5.0},
-    ])
-    graph = pd.DataFrame({"Graph_ID": [1], "Type": ["default"], "score": [1.5]})
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 1],
+        "Node": [0, 1, 2],
+        "feat_a": [0.1, 0.2, 0.3],
+        "feat_b": [1.0, 2.0, 3.0],
+    })
+    edges = pd.DataFrame({
+        "Graph_ID": [1, 1],
+        "Source_Node_ID": [0, 1],
+        "Target_Node_ID": [1, 2],
+        "weight": [0.5, 0.8],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "score": [42.7]})
     wb = _build_workbook({
         "Parameter": parameter,
         "Node": nodes,
         "Edge": edges,
         "Graph": graph,
     })
-    result = parse_excel_file(wb)
-    assert result["is_heterogeneous"] is True
-    assert set(result["node_dfs"].keys()) == {"cell", "pin"}
-    # Per-type frames should NOT carry the other type's feature columns.
-    assert "pin_cap" not in result["node_dfs"]["cell"].columns
-    assert "cell_area" not in result["node_dfs"]["pin"].columns
-    # Edge frame should carry its own feature.
-    assert "c2p_delay" in result["edge_dfs"]["cell2pin"].columns
-    assert result["canonical_edges"] == [("cell", "cell2pin", "pin")]
+    result = parse_excel_file(wb, "test-homo")
+    assert result["task_type"] == "graph_regression"
+    assert result["label_column"] == "score"
+    assert result["is_heterogeneous"] is False
+    assert len(result["nodes_df"]) == 3
+    assert len(result["edges_df"]) == 2
+    assert list(result["node_dfs"].keys()) == ["default"]
+    assert list(result["edge_dfs"].keys()) == ["default"]
+    assert result["canonical_edges"] == [("default", "default", "default")]
+    assert result["node_dfs"]["default"]["_node_type"].unique().tolist() == ["default"]
+    assert result["edge_dfs"]["default"]["_edge_type"].unique().tolist() == ["default"]
 
 
-def test_parse_excel_unified_node_missing_type_column_raises():
+def test_multi_type_parameter_raises():
+    """Parameter sheet with 2 Type values for Level=Node → ValueError with 'Heterogeneous'."""
     parameter = pd.DataFrame([
         {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "x"},
         {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "y"},
         {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "z"},
     ])
-    nodes = pd.DataFrame({"Graph_ID": [1, 1], "Node": [0, 1], "x": [0.1, None]})
+    nodes = pd.DataFrame({"Node": [0, 1], "x": [0.1, 0.2]})
     graph = pd.DataFrame({"Graph_ID": [1], "z": [0.5]})
     wb = _build_workbook({
         "Parameter": parameter, "Node": nodes, "Graph": graph,
     })
-    with pytest.raises(ValueError, match="missing a 'Type' column"):
-        parse_excel_file(wb)
-
-
-def test_parse_excel_unified_type_with_no_rows_raises():
-    parameter = pd.DataFrame([
-        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "x"},
-        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "y"},
-        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "z"},
-    ])
-    # Only cell rows present — pin rows missing.
-    nodes = pd.DataFrame({
-        "Graph_ID": [1, 1], "Node": [0, 1], "Type": ["cell", "cell"],
-        "x": [0.1, 0.2], "y": [None, None],
-    })
-    graph = pd.DataFrame({"Graph_ID": [1], "z": [0.5]})
-    wb = _build_workbook({
-        "Parameter": parameter, "Node": nodes, "Graph": graph,
-    })
-    with pytest.raises(ValueError, match="Type='pin'"):
+    with pytest.raises(ValueError, match="Heterogeneous"):
         parse_excel_file(wb)

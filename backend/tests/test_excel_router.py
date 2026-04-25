@@ -41,7 +41,7 @@ def _valid_excel_bytes() -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         parameter.to_excel(w, sheet_name="Parameter", index=False)
-        nodes.to_excel(w, sheet_name="Node_default", index=False)
+        nodes.to_excel(w, sheet_name="Node", index=False)
     buf.seek(0)
     return buf.read()
 

@@ -1,8 +1,9 @@
-"""Smoke tests for the bundled demo .xlsx files.
+"""Smoke test for the bundled demo .xlsx file.
 
-Verifies that the `demo_multigraph_{homo,hetero}.v2.xlsx` files committed
-under `backend/demo_data/` parse cleanly through `parse_excel_file`, use the
-new unified single-sheet layout, and expose the expected types.
+Verifies that `demo_multigraph_homo.v2.xlsx` under `backend/demo_data/` parses
+cleanly through `parse_excel_file` with the simplified V2 schema (one sheet
+per level, no Type column). Heterogeneous demos are no longer supported as
+of 2026-04-25.
 """
 from __future__ import annotations
 
@@ -30,18 +31,3 @@ def test_demo_homo_parses_and_is_homogeneous():
     # 30 graphs bundled.
     assert parsed["graph_df"] is not None
     assert len(parsed["graph_df"]) == 30
-
-
-def test_demo_hetero_parses_and_has_three_node_types():
-    parsed = parse_excel_file(_read("demo_multigraph_hetero.v2.xlsx"), "hetero")
-    assert parsed["is_heterogeneous"] is True
-    assert set(parsed["node_dfs"].keys()) == {"cell", "pin", "net"}
-    assert set(parsed["edge_dfs"].keys()) == {"cell2pin", "pin2pin", "pin2net"}
-    # Each per-type frame should only carry its own declared features.
-    assert "pin_cap" not in parsed["node_dfs"]["cell"].columns
-    assert "net_fanout" not in parsed["node_dfs"]["pin"].columns
-    # Canonical edges are tuples that match declared types.
-    ce = parsed["canonical_edges"]
-    triples = {(s, r, d) for s, r, d in ce}
-    assert ("cell", "cell2pin", "pin") in triples
-    assert ("pin", "pin2net", "net") in triples
