@@ -16,6 +16,7 @@ from torch import nn
 from torch_geometric.nn import (
     GCNConv, GATConv, SAGEConv, GINConv, global_mean_pool, to_hetero,
 )
+from app.models._lr import build_scheduler
 
 
 class _HomoBackbone(nn.Module):
@@ -130,8 +131,5 @@ class HeteroGraphRegressor(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-4)
-        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
-        return {
-            "optimizer": opt,
-            "lr_scheduler": {"scheduler": sched, "monitor": "val_loss", "interval": "epoch"},
-        }
+        sched = build_scheduler(opt)
+        return {"optimizer": opt, "lr_scheduler": sched}
