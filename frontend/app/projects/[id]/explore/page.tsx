@@ -18,20 +18,13 @@ import {
 
 import {
     getProjectExplore, analyzeColumn, getCorrelation, validateLabel, imputeMissing, confirmData,
-    getProjectGraphSample,
+    getProject, getProjectGraphSample,
     GenericExploreData, ColumnStats, NumericColumnStats, CategoricalColumnStats,
-    LabelValidationResult, GraphSampleData,
+    LabelValidationResult, GraphSampleData, ProjectDetail,
 } from '@/lib/api';
 import GraphPreview from '@/components/GraphPreview';
 
 const { Title, Text } = Typography;
-
-const TASK_TYPES = [
-    { value: 'node_classification', label: 'Node Classification' },
-    { value: 'node_regression', label: 'Node Regression' },
-    { value: 'graph_classification', label: 'Graph Classification' },
-    { value: 'graph_regression', label: 'Graph Regression' },
-];
 
 export default function ExplorePage() {
     const params = useParams();
@@ -39,6 +32,7 @@ export default function ExplorePage() {
     const projectId = sanitizeParam(params.id);
     const { token } = theme.useToken();
 
+    const [projectMeta, setProjectMeta] = useState<ProjectDetail | null>(null);
     const [exploreData, setExploreData] = useState<GenericExploreData | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -54,8 +48,8 @@ export default function ExplorePage() {
     const [imputeLoading, setImputeLoading] = useState(false);
     const [imputeResult, setImputeResult] = useState<string | null>(null);
 
-    const [taskType, setTaskType] = useState('');
-    const [labelColumn, setLabelColumn] = useState('');
+    const taskType = projectMeta?.dataset_summary?.declared_task_type ?? '';
+    const labelColumn = projectMeta?.dataset_summary?.declared_label_column ?? '';
     const [labelValidation, setLabelValidation] = useState<LabelValidationResult | null>(null);
     const [labelLoading, setLabelLoading] = useState(false);
 
@@ -90,11 +84,15 @@ export default function ExplorePage() {
     useEffect(() => {
         if (!projectId) return;
         setLoading(true);
-        getProjectExplore(projectId)
-            .then(data => {
-                setExploreData(data);
-                setCorrColumns(data.correlation_columns);
-                setCorrData(data.feature_correlation);
+        Promise.all([
+            getProjectExplore(projectId),
+            getProject(projectId),
+        ])
+            .then(([exploreResult, projectResult]) => {
+                setExploreData(exploreResult);
+                setCorrColumns(exploreResult.correlation_columns);
+                setCorrData(exploreResult.feature_correlation);
+                setProjectMeta(projectResult);
             })
             .catch(console.error)
             .finally(() => setLoading(false));
@@ -183,7 +181,7 @@ export default function ExplorePage() {
     const missingColumns = exploreData.columns.filter(c => c.missing_count > 0);
     const currentColInfo = exploreData.columns.find(c => c.name === selectedColumn);
 
-    const canConfirm = taskType && labelColumn && labelValidation?.valid && !confirming;
+    const canConfirm = Boolean(labelValidation?.valid) && !confirming;
 
     // Build attribute summary table data
     const attrTableData = [
@@ -616,40 +614,7 @@ export default function ExplorePage() {
                 </Card>
 
                 {/* SECTION III: LABEL & TARGET ANALYSIS */}
-                <Card title="III. Label & Target Analysis">
-                    <Space size="middle" wrap>
-                        <Select
-                            placeholder="Task Type"
-                            value={taskType || undefined}
-                            onChange={setTaskType}
-                            style={{ minWidth: 250 }}
-                            options={TASK_TYPES}
-                        />
-
-                        <Select
-                            placeholder="Label Column"
-                            value={labelColumn || undefined}
-                            onChange={setLabelColumn}
-                            style={{ minWidth: 250 }}
-                            showSearch
-                            filterOption={(input, option) =>
-                                (option?.value as string).toLowerCase().includes(input.toLowerCase())
-                            }
-                            options={allColumnNames.map(name => {
-                                const info = exploreData.columns.find(c => c.name === name);
-                                return {
-                                    value: name,
-                                    label: (
-                                        <Space>
-                                            {name}
-                                            {info && <Tag color={info.dtype === 'numeric' ? 'blue' : 'cyan'} style={{ fontSize: 10 }}>{info.dtype}</Tag>}
-                                        </Space>
-                                    ),
-                                };
-                            })}
-                        />
-                    </Space>
-
+                <Card title={`III. Label & Target Analysis${labelColumn ? ` — ${labelColumn}` : ''}`}>
                     {labelLoading && (
                         <div style={{ marginTop: 16 }}>
                             <Spin size="small" />
@@ -721,10 +686,6 @@ export default function ExplorePage() {
 
                 {/* Confirm & Proceed */}
                 {confirmError && <Alert type="error" showIcon message={confirmError} />}
-
-                {!taskType && (
-                    <Alert type="info" showIcon message="Please select a task type and label column to proceed." />
-                )}
 
                 <Button
                     type="primary"
