@@ -241,6 +241,9 @@ async def _store_excel_dataset(project_id: str, content: bytes, name: str) -> Da
     is_hetero = parsed["is_heterogeneous"]
     node_types = parsed["spec"].node_types()
     edge_types = parsed["spec"].edge_types()
+    _spec = parsed["spec"]
+    _node_type_features = {t: _spec.x_columns("Node", t) for t in node_types} if is_hetero else None
+    _edge_type_features = {t: _spec.x_columns("Edge", t) for t in edge_types} if is_hetero else None
 
     explore_stats = compute_generic_explore(
         nodes_df, edges_df,
@@ -249,6 +252,8 @@ async def _store_excel_dataset(project_id: str, content: bytes, name: str) -> Da
         canonical_edges=parsed["canonical_edges"],
         node_dfs=parsed["node_dfs"] if is_hetero else None,
         edge_dfs=parsed["edge_dfs"] if is_hetero else None,
+        node_type_features=_node_type_features,
+        edge_type_features=_edge_type_features,
     )
     # Count unique numeric feature names (per-type entries with same name → one feature).
     _numeric_names = {c["name"] for c in explore_stats["columns"] if c["dtype"] == "numeric"}
@@ -570,7 +575,21 @@ async def impute_missing_endpoint(project_id: str, body: ImputationRequest):
         for _t, _tdf in (ds.get("node_dfs") or {}).items():
             if body.column in _tdf.columns:
                 ds["node_dfs"][_t], _ = impute_column(_tdf, body.column, body.method)
-    # Refresh explore stats
+    # Refresh explore stats — rebuild per-type feature lists from stored schema spec.
+    _node_type_features_imp: dict | None = None
+    _edge_type_features_imp: dict | None = None
+    if _is_hetero:
+        _schema = ds.get("schema_spec") or {}
+        _entries = _schema.get("entries", [])
+        _ntf: dict[str, list[str]] = {}
+        _etf: dict[str, list[str]] = {}
+        for _e in _entries:
+            if _e.get("xy") == "X" and _e.get("level") == "Node":
+                _ntf.setdefault(_e["type"], []).append(_e["parameter"])
+            elif _e.get("xy") == "X" and _e.get("level") == "Edge":
+                _etf.setdefault(_e["type"], []).append(_e["parameter"])
+        _node_type_features_imp = _ntf or None
+        _edge_type_features_imp = _etf or None
     ds["explore_stats"] = compute_generic_explore(
         ds["nodes_df"], ds["edges_df"],
         is_heterogeneous=_is_hetero,
@@ -579,6 +598,8 @@ async def impute_missing_endpoint(project_id: str, body: ImputationRequest):
         canonical_edges=ds.get("canonical_edges", []),
         node_dfs=ds.get("node_dfs") if _is_hetero else None,
         edge_dfs=ds.get("edge_dfs") if _is_hetero else None,
+        node_type_features=_node_type_features_imp,
+        edge_type_features=_edge_type_features_imp,
     )
     store.put_dataset(ds["dataset_id"], ds)
     log = store.get_project(project_id).get("imputation_log", [])

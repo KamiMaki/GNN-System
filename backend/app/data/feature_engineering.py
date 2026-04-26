@@ -53,6 +53,7 @@ def _column_entries(
     *,
     type_name: Optional[str] = None,
     source: str = "node",
+    declared_cols: Optional[set[str]] = None,
 ) -> list[dict]:
     """Emit a list of column-stat dicts from ``df``.
 
@@ -60,11 +61,18 @@ def _column_entries(
     attached so the UI can group columns by the type they belong to. Missing
     counts are computed against ``len(df)`` — the rows of this *type* only —
     so heterogeneous graphs don't over-report missing values when concatenated.
+
+    When ``declared_cols`` is provided (heterogeneous mode), only columns that
+    are in that set are included. This prevents cross-type padding columns
+    (e.g. ``f_pin`` present in cell rows as all-NaN) from being reported as
+    100 % missing for the wrong type.
     """
     total = len(df)
     out = []
     for col in df.columns:
         if col in skip:
+            continue
+        if declared_cols is not None and col not in declared_cols:
             continue
         series = df[col]
         missing = int(series.isna().sum())
@@ -91,6 +99,8 @@ def compute_generic_explore(
     canonical_edges: Optional[list] = None,
     node_dfs: Optional[dict[str, pd.DataFrame]] = None,
     edge_dfs: Optional[dict[str, pd.DataFrame]] = None,
+    node_type_features: Optional[dict[str, list[str]]] = None,
+    edge_type_features: Optional[dict[str, list[str]]] = None,
 ) -> dict:
     """Compute generic exploration stats for an Excel-ingested dataset.
 
@@ -101,6 +111,11 @@ def compute_generic_explore(
     column-stats block is computed PER TYPE so missing counts use the row
     count of that type as the denominator. Without per-type input, stats fall
     back to the unified DataFrames (legacy / homogeneous behaviour).
+
+    ``node_type_features`` / ``edge_type_features`` map each type name to the
+    list of X column names declared for it in the Parameter sheet.  When
+    supplied, only declared columns are included in per-type stats, preventing
+    cross-type NaN padding columns from being flagged as 100 % missing.
     """
     # ── Column stats ──
     # In heterogeneous mode with per-type inputs, each (type, column) is a
@@ -108,8 +123,13 @@ def compute_generic_explore(
     if node_dfs:
         columns: list[dict] = []
         for t, df in node_dfs.items():
+            declared = (
+                set(node_type_features[t]) if node_type_features and t in node_type_features
+                else None
+            )
             columns.extend(_column_entries(
                 df, NODE_COL_SKIP, type_name=t, source="node",
+                declared_cols=declared,
             ))
     else:
         columns = _column_entries(nodes_df, NODE_COL_SKIP)
@@ -127,8 +147,13 @@ def compute_generic_explore(
     if edge_dfs:
         edge_columns: list[dict] = []
         for t, df in edge_dfs.items():
+            declared = (
+                set(edge_type_features[t]) if edge_type_features and t in edge_type_features
+                else None
+            )
             edge_columns.extend(_column_entries(
                 df, EDGE_COL_SKIP, type_name=t, source="edge",
+                declared_cols=declared,
             ))
     else:
         edge_columns = _column_entries(edges_df, EDGE_COL_SKIP)

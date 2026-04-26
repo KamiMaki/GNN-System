@@ -19,8 +19,33 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
+from typing import Iterable
 
 import pandas as pd
+
+
+# ── Union-Find (for connectivity enforcement) ─────────────────────────────
+
+class _UnionFind:
+    def __init__(self, nodes: Iterable) -> None:
+        self._parent: dict = {n: n for n in nodes}
+
+    def find(self, x):
+        while self._parent[x] != x:
+            self._parent[x] = self._parent[self._parent[x]]
+            x = self._parent[x]
+        return x
+
+    def union(self, a, b) -> None:
+        self._parent[self.find(a)] = self.find(b)
+
+    def components(self) -> dict:
+        """Return {root: [members]} for every component."""
+        groups: dict = {}
+        for n in self._parent:
+            r = self.find(n)
+            groups.setdefault(r, []).append(n)
+        return groups
 
 SEED = 42
 OUT = Path(__file__).resolve().parent.parent / "demo_data"
@@ -96,6 +121,23 @@ def make_homo(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
                 partner = rng.choice(others)
                 g_edges.append(_homo_edge(gid, nid, partner, rng))
 
+        # Connectivity pass: merge disconnected components into one.
+        uf = _UnionFind(node_ids)
+        for e in g_edges:
+            uf.union(e["Source_Node_ID"], e["Target_Node_ID"])
+        comps = uf.components()
+        while len(comps) > 1:
+            roots = list(comps.keys())
+            # Pick the largest component as anchor.
+            largest = max(roots, key=lambda r: len(comps[r]))
+            anchor = rng.choice(comps[largest])
+            # Pick a node from any other component.
+            other_root = next(r for r in roots if r != largest)
+            bridge = rng.choice(comps[other_root])
+            g_edges.append(_homo_edge(gid, anchor, bridge, rng))
+            uf.union(anchor, bridge)
+            comps = uf.components()
+
         edge_rows.extend(g_edges)
         graph_rows.append({
             "Graph_ID": gid,
@@ -122,17 +164,25 @@ def make_homo(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
 def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
     rng = random.Random(SEED)
 
+    # Feature layout (includes two SHARED features to exercise Fix 2):
+    #   area_um2     — declared for BOTH cell AND pin  (shared)
+    #   cap_ff       — declared for BOTH pin  AND net  (shared)
+    #   cell_delay_ps — cell only
+    #   cell_drive    — cell only
+    #   pin_direction — pin only
+    #   net_fanout    — net only
     parameter = pd.DataFrame([
         # Cell node features
         {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "cell_delay_ps", "Weight": None},
-        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "cell_area_um2", "Weight": None},
+        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "area_um2", "Weight": None},
         {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "cell_drive", "Weight": None},
-        # Pin node features
-        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "pin_cap_ff", "Weight": None},
+        # Pin node features (area_um2 shared with cell; cap_ff shared with net)
+        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "area_um2", "Weight": None},
+        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "cap_ff", "Weight": None},
         {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "pin_direction", "Weight": None},
-        # Net node features
+        # Net node features (cap_ff shared with pin)
+        {"XY": "X", "Level": "Node", "Type": "net", "Parameter": "cap_ff", "Weight": None},
         {"XY": "X", "Level": "Node", "Type": "net", "Parameter": "net_fanout", "Weight": None},
-        {"XY": "X", "Level": "Node", "Type": "net", "Parameter": "net_total_cap_ff", "Weight": None},
         # cell_pin edge features
         {"XY": "X", "Level": "Edge", "Type": "cell_pin", "Parameter": "cp_resistance_ohm", "Weight": None},
         # pin_net edge features
@@ -163,29 +213,38 @@ def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
         for cid in cell_ids:
             node_rows.append({
                 "Graph_ID": gid, "Node": cid, "Type": "cell",
+                # cell-private features
                 "cell_delay_ps": rng.randint(5, 60),
-                "cell_area_um2": round(rng.uniform(0.3, 3.0), 3),
                 "cell_drive": rng.choice([1, 2, 4, 8]),
-                "pin_cap_ff": None, "pin_direction": None,
-                "net_fanout": None, "net_total_cap_ff": None,
+                # shared with pin
+                "area_um2": round(rng.uniform(0.3, 3.0), 3),
+                # NaN for non-cell columns
+                "cap_ff": None, "pin_direction": None, "net_fanout": None,
             })
 
         for pid in pin_ids:
             node_rows.append({
                 "Graph_ID": gid, "Node": pid, "Type": "pin",
-                "cell_delay_ps": None, "cell_area_um2": None, "cell_drive": None,
-                "pin_cap_ff": round(rng.uniform(0.01, 0.5), 4),
+                # shared with cell
+                "area_um2": round(rng.uniform(0.05, 1.5), 3),
+                # shared with net
+                "cap_ff": round(rng.uniform(0.01, 0.5), 4),
+                # pin-private
                 "pin_direction": rng.choice([0, 1]),
-                "net_fanout": None, "net_total_cap_ff": None,
+                # NaN for non-pin columns
+                "cell_delay_ps": None, "cell_drive": None, "net_fanout": None,
             })
 
         for nid in net_ids:
             node_rows.append({
                 "Graph_ID": gid, "Node": nid, "Type": "net",
-                "cell_delay_ps": None, "cell_area_um2": None, "cell_drive": None,
-                "pin_cap_ff": None, "pin_direction": None,
+                # shared with pin
+                "cap_ff": round(rng.uniform(0.1, 2.0), 3),
+                # net-private
                 "net_fanout": rng.randint(1, 8),
-                "net_total_cap_ff": round(rng.uniform(0.1, 2.0), 3),
+                # NaN for non-net columns
+                "cell_delay_ps": None, "cell_drive": None,
+                "area_um2": None, "pin_direction": None,
             })
 
         # cell_pin edges: each cell connects to its pins
@@ -267,6 +326,104 @@ def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
                     "pn_wire_length_um": wl,
                 })
                 covered.add(nid)
+
+        # Connectivity pass: merge disconnected components using valid edge types.
+        # We use pin nodes as bridges: cell→pin (cell_pin) or pin→net (pin_net).
+        all_node_ids = cell_ids + pin_ids + net_ids
+        # Build a lookup: node_id → type string
+        node_type_map: dict[int, str] = {}
+        for cid in cell_ids:
+            node_type_map[cid] = "cell"
+        for pid in pin_ids:
+            node_type_map[pid] = "pin"
+        for nid_inner in net_ids:
+            node_type_map[nid_inner] = "net"
+
+        uf = _UnionFind(all_node_ids)
+        for e in g_edges:
+            uf.union(e["Source_Node_ID"], e["Target_Node_ID"])
+
+        comps = uf.components()
+        while len(comps) > 1:
+            roots = list(comps.keys())
+            largest = max(roots, key=lambda r: len(comps[r]))
+            # Find a pin in the largest component to use as bridge anchor.
+            anchor_pin = next(
+                (n for n in comps[largest] if node_type_map[n] == "pin"),
+                rng.choice(comps[largest]),
+            )
+            # Pick any node from a smaller component.
+            other_root = next(r for r in roots if r != largest)
+            bridge_node = rng.choice(comps[other_root])
+            bridge_type = node_type_map[bridge_node]
+
+            if bridge_type == "cell":
+                # cell→anchor_pin via cell_pin edge
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": bridge_node, "Target_Node_ID": anchor_pin,
+                    "Type": "cell_pin",
+                    "cp_resistance_ohm": round(rng.uniform(1.0, 50.0), 2),
+                    "pn_wire_length_um": None,
+                })
+            elif bridge_type == "net":
+                # anchor_pin→net via pin_net edge
+                wl = round(rng.uniform(5.0, 200.0), 2)
+                total_wl += wl
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": anchor_pin, "Target_Node_ID": bridge_node,
+                    "Type": "pin_net",
+                    "cp_resistance_ohm": None,
+                    "pn_wire_length_um": wl,
+                })
+            else:
+                # bridge_node is a pin in the other component.
+                # Connect it to anchor_pin via a cell_pin-style bridge:
+                # add a cell_pin edge from a cell in the largest component to
+                # bridge_node is not valid (cell→pin only).
+                # Instead, connect anchor_pin (pin, largest) → bridge_node (pin,
+                # other) is not a valid edge type either.
+                # Safest: bridge via a net in the largest component:
+                #   bridge_node (pin, other) → largest_net (net, largest) [pin_net]
+                largest_net = next(
+                    (n for n in comps[largest] if node_type_map[n] == "net"),
+                    None,
+                )
+                if largest_net is not None:
+                    wl = round(rng.uniform(5.0, 200.0), 2)
+                    total_wl += wl
+                    g_edges.append({
+                        "Graph_ID": gid,
+                        "Source_Node_ID": bridge_node, "Target_Node_ID": largest_net,
+                        "Type": "pin_net",
+                        "cp_resistance_ohm": None,
+                        "pn_wire_length_um": wl,
+                    })
+                    uf.union(bridge_node, largest_net)
+                else:
+                    # No net in largest component — use anchor_pin→bridge_node via
+                    # any net in either component.
+                    any_net = next(
+                        (n for comp_nodes in comps.values() for n in comp_nodes
+                         if node_type_map[n] == "net"),
+                        net_ids[0],
+                    )
+                    wl = round(rng.uniform(5.0, 200.0), 2)
+                    total_wl += wl
+                    g_edges.append({
+                        "Graph_ID": gid,
+                        "Source_Node_ID": bridge_node, "Target_Node_ID": any_net,
+                        "Type": "pin_net",
+                        "cp_resistance_ohm": None,
+                        "pn_wire_length_um": wl,
+                    })
+                    uf.union(bridge_node, any_net)
+                comps = uf.components()
+                continue
+
+            uf.union(anchor_pin, bridge_node)
+            comps = uf.components()
 
         edge_rows.extend(g_edges)
         graph_rows.append({

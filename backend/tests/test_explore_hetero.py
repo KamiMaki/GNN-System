@@ -61,6 +61,126 @@ def test_homogeneous_explore_unchanged():
     assert by_name["x1"]["missing_count"] == 0
 
 
+def test_shared_feature_across_types_no_cross_contamination():
+    """Shared feature 'area' declared for both cell and pin.
+
+    The per-type DataFrames produced by _split_by_type keep ALL columns from
+    the unified sheet — so 'f_pin' appears in cell's frame as all-NaN, and
+    'f_cell' appears in pin's frame as all-NaN.  With declared_cols filtering
+    (Fix 2), only the columns declared in the Parameter schema for each type
+    should appear in that type's column stats.
+
+    Assertions:
+    - cell stats include 'area' and 'f_cell', but NOT 'f_pin'
+    - pin stats include 'area' and 'f_pin', but NOT 'f_cell'
+    - 'area' missing_count is 0 for both cell and pin (all values populated)
+    """
+    # Simulate unified DataFrame after _split_by_type — all columns present,
+    # cross-type padding is NaN.
+    cell_df = pd.DataFrame({
+        "node_id": [0, 1, 2, 3],
+        "_graph": [1, 1, 1, 1],
+        "_node_type": ["cell"] * 4,
+        "area":   [1.0, 2.0, 3.0, 4.0],   # shared
+        "f_cell": [10.0, 20.0, 30.0, 40.0],  # cell-only
+        "f_pin":  [None, None, None, None],   # cross-type NaN padding
+    })
+    pin_df = pd.DataFrame({
+        "node_id": [4, 5, 6, 7],
+        "_graph": [1, 1, 1, 1],
+        "_node_type": ["pin"] * 4,
+        "area":   [0.5, 0.6, 0.7, 0.8],  # shared
+        "f_pin":  [1.1, 2.2, 3.3, 4.4],  # pin-only
+        "f_cell": [None, None, None, None],  # cross-type NaN padding
+    })
+    unified = pd.concat([cell_df, pin_df], ignore_index=True)
+
+    node_type_features = {
+        "cell": ["area", "f_cell"],
+        "pin":  ["area", "f_pin"],
+    }
+
+    stats = compute_generic_explore(
+        unified, pd.DataFrame(columns=["src_id", "dst_id"]),
+        is_heterogeneous=True,
+        node_types=["cell", "pin"], edge_types=[],
+        canonical_edges=[],
+        node_dfs={"cell": cell_df, "pin": pin_df},
+        edge_dfs={},
+        node_type_features=node_type_features,
+    )
+    by_key = {(c["name"], c.get("node_type")): c for c in stats["columns"]}
+
+    # Shared feature has correct missing count for each type
+    assert ("area", "cell") in by_key
+    assert by_key[("area", "cell")]["missing_count"] == 0
+    assert by_key[("area", "cell")]["missing_pct"] == 0.0
+
+    assert ("area", "pin") in by_key
+    assert by_key[("area", "pin")]["missing_count"] == 0
+
+    # Type-private features present under their own type
+    assert ("f_cell", "cell") in by_key
+    assert by_key[("f_cell", "cell")]["missing_count"] == 0
+    assert ("f_pin", "pin") in by_key
+    assert by_key[("f_pin", "pin")]["missing_count"] == 0
+
+    # Cross-type padding columns must NOT appear
+    assert ("f_pin", "cell") not in by_key, "f_pin must not appear in cell stats"
+    assert ("f_cell", "pin") not in by_key, "f_cell must not appear in pin stats"
+
+
+def test_missing_pct_uses_type_row_count_as_denominator():
+    """cell's area has 2/4 rows missing → missing% must be 50%, NOT 25%.
+
+    Without Fix 2, if missing% used the full 8-row unified frame as denominator
+    it would incorrectly show 25%.
+    """
+    cell_df = pd.DataFrame({
+        "node_id": [0, 1, 2, 3],
+        "_graph": [1, 1, 1, 1],
+        "_node_type": ["cell"] * 4,
+        "area": [1.0, None, 3.0, None],  # 2/4 missing in cell rows
+        "f_pin": [None, None, None, None],  # cross-type padding
+    })
+    pin_df = pd.DataFrame({
+        "node_id": [4, 5, 6, 7],
+        "_graph": [1, 1, 1, 1],
+        "_node_type": ["pin"] * 4,
+        "area":  [0.5, 0.6, 0.7, 0.8],
+        "f_pin": [1.1, 2.2, 3.3, 4.4],
+    })
+    unified = pd.concat([cell_df, pin_df], ignore_index=True)
+
+    node_type_features = {
+        "cell": ["area"],
+        "pin":  ["area", "f_pin"],
+    }
+
+    stats = compute_generic_explore(
+        unified, pd.DataFrame(columns=["src_id", "dst_id"]),
+        is_heterogeneous=True,
+        node_types=["cell", "pin"], edge_types=[],
+        canonical_edges=[],
+        node_dfs={"cell": cell_df, "pin": pin_df},
+        edge_dfs={},
+        node_type_features=node_type_features,
+    )
+    by_key = {(c["name"], c.get("node_type")): c for c in stats["columns"]}
+
+    cell_area = by_key[("area", "cell")]
+    # Denominator must be 4 (cell rows only), not 8 (whole frame)
+    assert cell_area["missing_count"] == 2
+    assert cell_area["missing_pct"] == 50.0, (
+        f"Expected 50.0% missing for cell area, got {cell_area['missing_pct']}% "
+        "(denominator should be 4 cell rows, not 8 total rows)"
+    )
+
+    # pin's area has 0 missing
+    assert by_key[("area", "pin")]["missing_count"] == 0
+    assert by_key[("area", "pin")]["missing_pct"] == 0.0
+
+
 def test_hetero_three_types_cell_area_not_missing():
     """Simulate real chip-design hetero graph with cell/pin/net node types.
 
