@@ -3,14 +3,16 @@
 The graph_data_template.xlsx Parameter sheet declares every feature / label with:
     XY        : "X" (feature) or "Y" (label / prediction target)
     Level     : "Node" | "Edge" | "Graph"
-    Type      : subtype suffix — combined with Level forms the data sheet name,
-                e.g. Level=Node + Type=default  -> sheet "Node_default".
-                Supports heterogeneous graphs via multiple Types per Level.
+    Type      : node/edge type name (e.g. "default", "cell", "pin").
+                Multiple Types per Level → heterogeneous graph.
+                The data sheet (Node/Edge/Graph) may carry a ``Type`` column
+                whose values are split into per-type DataFrames for the PyG
+                converter; absent or all-equal → homogeneous.
     Parameter : column name inside the corresponding data sheet (e.g. "X_1").
     Weight    : loss weight — only meaningful for Y rows; empty ⇒ 1.0.
 
-Phase 2 scope:
-    * Heterogeneous graphs supported (multiple Types per Level).
+Scope:
+    * Heterogeneous graphs supported via in-sheet ``Type`` column.
     * Single Y level (Node OR Graph). Edge-level prediction + multi-task
       remain deferred to a later phase.
 """
@@ -100,20 +102,52 @@ class ExcelGraphSpec:
         }
 
 
-def validate_single_type_per_level(spec: "ExcelGraphSpec") -> None:
-    """Raise ValueError if any Level declares more than one distinct Type.
+def validate_hetero_consistency(
+    spec: "ExcelGraphSpec",
+    type_columns: dict[str, list[str]],
+) -> None:
+    """Validate that in-sheet Type values match the Parameter-sheet declared types.
 
-    Heterogeneous graphs are no longer supported (2026-04-25).
-    The Parameter sheet may still carry a Type column, but each Level
-    must declare exactly one Type value.
+    ``type_columns`` maps level name to the list of distinct Type values that
+    actually appear in the corresponding data sheet's ``Type`` column (empty
+    list when the column is absent or the level has no data sheet).
+
+    Rules:
+    - If a data sheet has NO ``Type`` column, it is treated as homogeneous and
+      the Parameter sheet must declare at most one Type for that level (or the
+      declared Type is just used as a label without splitting).
+    - If a data sheet HAS a ``Type`` column, every value that appears in it
+      must have been declared in the Parameter sheet for that level, and vice-
+      versa.  Missing declarations in either direction are reported clearly.
     """
     for level in VALID_LEVELS:
-        types = spec.types_for_level(level)
-        if len(types) > 1:
+        declared = set(spec.types_for_level(level))
+        in_sheet = set(type_columns.get(level, []))
+
+        if not in_sheet:
+            # No Type column in data sheet — homogeneous path, nothing to validate.
+            continue
+
+        extra_in_sheet = in_sheet - declared
+        extra_declared = declared - in_sheet
+
+        errors: list[str] = []
+        if extra_in_sheet:
+            errors.append(
+                f"Type values in '{level}' data sheet not declared in Parameter sheet: "
+                f"{sorted(extra_in_sheet)}."
+            )
+        if extra_declared:
+            errors.append(
+                f"Type values declared in Parameter sheet for Level={level} not found "
+                f"in data sheet: {sorted(extra_declared)}."
+            )
+        if errors:
             raise ValueError(
-                f"Heterogeneous graphs are no longer supported (2026-04-25). "
-                f"Parameter sheet declares multiple types for Level={level}: {types}. "
-                f"Use a single Type value per level."
+                f"Heterogeneous type mismatch for Level={level}. "
+                + " ".join(errors)
+                + " Ensure every Type value in the data sheet has a matching row in "
+                "the Parameter sheet, and vice versa."
             )
 
 

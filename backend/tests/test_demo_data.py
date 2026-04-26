@@ -1,9 +1,7 @@
-"""Smoke test for the bundled demo .xlsx file.
+"""Smoke tests for the bundled demo .xlsx files.
 
-Verifies that `demo_multigraph_homo.v2.xlsx` under `backend/demo_data/` parses
-cleanly through `parse_excel_file` with the simplified V2 schema (one sheet
-per level, no Type column). Heterogeneous demos are no longer supported as
-of 2026-04-25.
+Verifies that both the homogeneous and heterogeneous demo workbooks under
+``backend/demo_data/`` parse cleanly through ``parse_excel_file``.
 """
 from __future__ import annotations
 
@@ -31,3 +29,24 @@ def test_demo_homo_parses_and_is_homogeneous():
     # 30 graphs bundled.
     assert parsed["graph_df"] is not None
     assert len(parsed["graph_df"]) == 30
+
+
+def _read_hetero() -> bytes:
+    """Read the hetero demo, preferring the freshly generated copy."""
+    for name in ("demo_multigraph_hetero.v2.new.xlsx", "demo_multigraph_hetero.v2.xlsx"):
+        p = DEMO_DIR / name
+        if p.exists():
+            return p.read_bytes()
+    pytest.skip("hetero demo not generated; run scripts/generate_excel_demos.py")
+
+
+def test_demo_hetero_parses_and_is_heterogeneous():
+    parsed = parse_excel_file(_read_hetero(), "hetero")
+    assert parsed["is_heterogeneous"] is True
+    assert parsed["task_type"] == "graph_regression"
+    # At least 2 node types present
+    assert len(parsed["node_dfs"]) >= 2
+    # Unified view contains all rows from all types
+    total_typed = sum(len(df) for df in parsed["node_dfs"].values())
+    assert len(parsed["nodes_df"]) == total_typed
+    assert parsed["graph_df"] is not None

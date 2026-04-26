@@ -4,16 +4,18 @@ Reads the multi-sheet template (Parameter + Node/Edge/Graph data sheets),
 derives the user's intended task from Y rows in the Parameter sheet, and emits
 DataFrames ready for the PyG converter.
 
-Schema (2026-04-25 — V2 simplified):
+Schema (V3 — 2026-04-26):
 
     One sheet per level:  ``Node``, ``Edge``, ``Graph``.
-    No ``Type`` column in data sheets.
-    The Parameter sheet still carries a ``Type`` column but each Level must
-    declare exactly one distinct Type value (heterogeneous graphs are not
-    supported; use a single Type per Level).
+    Data sheets MAY contain a ``Type`` column:
+        - Absent OR all values equal  → homogeneous (single key "default").
+        - Present with multiple distinct values → heterogeneous; rows are split
+          into per-type DataFrames keyed by type name.
+    The Parameter sheet carries a ``Type`` column and may declare multiple Type
+    values per Level for heterogeneous graphs.
 
 Scope:
-    * Homogeneous graphs only.
+    * Homogeneous and heterogeneous graphs.
     * Y must be declared on exactly one Level (Node or Graph).
     * Edge-level prediction (Y on Edge) is still deferred.
 """
@@ -28,7 +30,7 @@ from app.data.excel_spec import (
     ExcelGraphSpec,
     VALID_LEVELS,
     parse_parameter_sheet,
-    validate_single_type_per_level,
+    validate_hetero_consistency,
 )
 
 
@@ -37,6 +39,7 @@ NODE_ID_CANDIDATES = ("Node", "node_id", "NodeID", "Node_ID", "node")
 SRC_ID_CANDIDATES = ("Source_Node_ID", "src_id", "source", "Source", "SourceNodeID")
 DST_ID_CANDIDATES = ("Target_Node_ID", "dst_id", "target", "Target", "TargetNodeID")
 GRAPH_ID_CANDIDATES = ("Graph_ID", "graph_id", "GraphID")
+TYPE_COL_CANDIDATES = ("Type", "type", "TYPE", "node_type", "edge_type")
 
 
 def _pick(df: pd.DataFrame, candidates: tuple[str, ...]) -> Optional[str]:
@@ -136,21 +139,63 @@ def _normalise_edge_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
     return out
 
 
+def _split_by_type(
+    df: pd.DataFrame,
+    type_col: Optional[str],
+    internal_col: str,
+    default_label: str = "default",
+) -> tuple[dict[str, pd.DataFrame], bool]:
+    """Split *df* by the values in *type_col*.
+
+    Returns:
+        (per_type_dict, is_hetero)
+        - per_type_dict: keyed by type string; each sub-frame has *internal_col*
+          set to the type string and the original type column dropped.
+        - is_hetero: True when more than one distinct type is present.
+    """
+    if type_col is None:
+        # No Type column → homogeneous
+        out = df.copy()
+        out[internal_col] = default_label
+        return {default_label: out}, False
+
+    values = df[type_col].fillna(default_label).astype(str)
+    distinct = values.unique().tolist()
+
+    if len(distinct) <= 1:
+        # All rows share the same type → treat as homogeneous
+        label = distinct[0] if distinct else default_label
+        out = df.drop(columns=[type_col]).copy()
+        out[internal_col] = label
+        return {label: out}, False
+
+    # Multiple types → heterogeneous split
+    per_type: dict[str, pd.DataFrame] = {}
+    for t in distinct:
+        sub = df[values == t].drop(columns=[type_col]).copy()
+        sub[internal_col] = t
+        per_type[t] = sub.reset_index(drop=True)
+
+    return per_type, True
+
+
 def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     """Parse an Excel workbook matching graph_data_template.xlsx.
 
     Expected sheets: ``Parameter``, ``Node``, ``Edge`` (optional), ``Graph`` (optional).
-    Data sheets must NOT contain a ``Type`` column — one sheet per level, homogeneous only.
+    Data sheets may contain a ``Type`` column:
+        - Absent or single-valued → homogeneous (``is_heterogeneous=False``).
+        - Multi-valued → heterogeneous (``is_heterogeneous=True``).
 
     Returns:
         dict with keys:
             spec                 : ExcelGraphSpec
-            is_heterogeneous     : bool  (always False under the simplified schema)
-            nodes_df             : node DataFrame
-            edges_df             : edge DataFrame
+            is_heterogeneous     : bool
+            nodes_df             : node DataFrame (concatenated, with ``_node_type``)
+            edges_df             : edge DataFrame (concatenated, with ``_edge_type``)
             graph_df             : Optional[pd.DataFrame]
-            node_dfs             : dict[node_type, DataFrame]  (single key "default")
-            edge_dfs             : dict[edge_type, DataFrame]  (single key "default", or {})
+            node_dfs             : dict[node_type, DataFrame]
+            edge_dfs             : dict[edge_type, DataFrame]
             canonical_edges      : list[tuple[src_type, rel, dst_type]]
             task_type            : e.g. "graph_regression"
             label_column         : Y column name
@@ -160,9 +205,6 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     sheets = _load_workbook(source)
     spec = parse_parameter_sheet(sheets["Parameter"])
     _validate_scope(spec)
-    validate_single_type_per_level(spec)
-
-    y_level = spec.y_levels()[0]           # "Node" or "Graph"
 
     # ── Load Node sheet (required) ──
     if "Node" not in sheets:
@@ -170,17 +212,29 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
             "Excel workbook is missing the required 'Node' sheet. "
             "Please provide a sheet named exactly 'Node'."
         )
-    node_type = spec.types_for_level("Node")[0]
     node_norm = _normalise_node_sheet(sheets["Node"], "Node")
-    node_norm["_node_type"] = "default"
-    node_dfs: dict[str, pd.DataFrame] = {"default": node_norm}
+    node_type_col = _pick(node_norm, TYPE_COL_CANDIDATES)
+    # Exclude the canonical id/graph columns from being mistaken for Type.
+    # _pick searches by name so node_id / _graph won't match TYPE_COL_CANDIDATES.
+    node_dfs, node_is_hetero = _split_by_type(node_norm, node_type_col, "_node_type")
 
     # ── Load Edge sheet (optional) ──
     edge_dfs: dict[str, pd.DataFrame] = {}
+    edge_is_hetero = False
     if "Edge" in sheets:
         edge_norm = _normalise_edge_sheet(sheets["Edge"], "Edge")
-        edge_norm["_edge_type"] = "default"
-        edge_dfs["default"] = edge_norm
+        edge_type_col = _pick(edge_norm, TYPE_COL_CANDIDATES)
+        edge_dfs, edge_is_hetero = _split_by_type(edge_norm, edge_type_col, "_edge_type")
+
+    is_heterogeneous = node_is_hetero or edge_is_hetero
+
+    # ── Validate in-sheet types against Parameter sheet declarations ──
+    node_in_sheet_types = list(node_dfs.keys()) if node_is_hetero else []
+    edge_in_sheet_types = list(edge_dfs.keys()) if edge_is_hetero else []
+    validate_hetero_consistency(spec, {
+        "Node": node_in_sheet_types,
+        "Edge": edge_in_sheet_types,
+    })
 
     # ── Load Graph sheet (optional) ──
     graph_df: Optional[pd.DataFrame] = None
@@ -196,26 +250,44 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
             "(to identify graph vertices)."
         )
 
-    # Unified views (single type → same as the one df).
-    unified_nodes = node_norm.copy()
+    # Unified views (concatenate per-type frames).
+    unified_nodes = pd.concat(list(node_dfs.values()), ignore_index=True)
     unified_edges = (
-        edge_norm.copy()
-        if edge_dfs else pd.DataFrame(columns=["src_id", "dst_id"])
+        pd.concat(list(edge_dfs.values()), ignore_index=True)
+        if edge_dfs
+        else pd.DataFrame(columns=["src_id", "dst_id"])
     )
 
-    # Canonical edges: homogeneous → single (default, default, default).
+    # Canonical edges.
     canonical_edges: list[tuple[str, str, str]] = []
     if edge_dfs:
-        canonical_edges.append(("default", "default", "default"))
+        if is_heterogeneous:
+            for src_t in node_dfs:
+                for et in edge_dfs:
+                    for dst_t in node_dfs:
+                        canonical_edges.append((src_t, et, dst_t))
+        else:
+            node_t = next(iter(node_dfs))
+            edge_t = next(iter(edge_dfs))
+            canonical_edges.append((node_t, edge_t, node_t))
 
     # ── derive task_type + label_column ──
-    y_type = spec.types_for_level(y_level)[0]
+    y_level = spec.y_levels()[0]   # "Node" or "Graph"
+
+    # For hetero, Y type may be any declared type; pick the first one.
+    y_types = spec.types_for_level(y_level)
+    y_type = y_types[0] if y_types else "default"
     y_cols = spec.y_columns(y_level, y_type)
     label_column = y_cols[0]
 
     if y_level == "Node":
-        target_df = node_dfs.get("default")
-        if target_df is None or label_column not in target_df.columns:
+        # Find the sub-frame that contains the label column.
+        target_df = None
+        for _t, _df in node_dfs.items():
+            if label_column in _df.columns:
+                target_df = _df
+                break
+        if target_df is None:
             raise ValueError(
                 f"Label column '{label_column}' declared in Parameter sheet "
                 f"is not present in the Node sheet."
@@ -238,7 +310,7 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
 
     return {
         "spec": spec,
-        "is_heterogeneous": False,
+        "is_heterogeneous": is_heterogeneous,
         "nodes_df": unified_nodes,
         "edges_df": unified_edges,
         "graph_df": graph_df,

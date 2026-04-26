@@ -1,8 +1,10 @@
-"""Tests for Excel template ingestion (V2 simplified schema — 2026-04-25).
+"""Tests for Excel template ingestion (V3 schema — 2026-04-26).
 
-Schema: one sheet per level (Node / Edge / Graph), no Type column in data sheets,
-homogeneous only.  Parameter sheet still has a Type column but must declare a
-single Type per Level.
+Schema: one sheet per level (Node / Edge / Graph).
+Data sheets MAY have a Type column:
+    - Absent or single-valued → homogeneous (single key "default").
+    - Multi-valued → heterogeneous; rows split into per-type DataFrames.
+Parameter sheet may declare multiple Type values per Level for hetero graphs.
 """
 from __future__ import annotations
 
@@ -291,17 +293,60 @@ def test_single_sheet_homogeneous():
     assert result["edge_dfs"]["default"]["_edge_type"].unique().tolist() == ["default"]
 
 
-def test_multi_type_parameter_raises():
-    """Parameter sheet with 2 Type values for Level=Node → ValueError with 'Heterogeneous'."""
+def test_in_sheet_type_column_splits_into_node_dfs():
+    """Node sheet with 2 distinct Type values → node_dfs has 2 keys, is_heterogeneous=True."""
     parameter = pd.DataFrame([
         {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "x"},
         {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "y"},
         {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "z"},
     ])
-    nodes = pd.DataFrame({"Node": [0, 1], "x": [0.1, 0.2]})
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 1],
+        "Node": [0, 1, 2],
+        "Type": ["cell", "cell", "pin"],
+        "x": [0.1, 0.2, 0.0],
+        "y": [0.0, 0.0, 0.5],
+    })
     graph = pd.DataFrame({"Graph_ID": [1], "z": [0.5]})
     wb = _build_workbook({
         "Parameter": parameter, "Node": nodes, "Graph": graph,
     })
-    with pytest.raises(ValueError, match="Heterogeneous"):
-        parse_excel_file(wb)
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is True
+    assert set(result["node_dfs"].keys()) == {"cell", "pin"}
+    assert len(result["node_dfs"]["cell"]) == 2
+    assert len(result["node_dfs"]["pin"]) == 1
+    assert result["node_dfs"]["cell"]["_node_type"].unique().tolist() == ["cell"]
+    assert result["node_dfs"]["pin"]["_node_type"].unique().tolist() == ["pin"]
+    # Concatenated unified view has all rows
+    assert len(result["nodes_df"]) == 3
+
+
+def test_homogeneous_still_works_without_type_column():
+    """Node/Edge sheets without Type column → single 'default' key, is_heterogeneous=False."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "feat_a"},
+        {"XY": "X", "Level": "Edge", "Type": "default", "Parameter": "weight"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "score"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 1],
+        "Node": [0, 1, 2],
+        "feat_a": [0.1, 0.2, 0.3],
+    })
+    edges = pd.DataFrame({
+        "Graph_ID": [1, 1],
+        "Source_Node_ID": [0, 1],
+        "Target_Node_ID": [1, 2],
+        "weight": [0.5, 0.8],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "score": [42.7]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node": nodes, "Edge": edges, "Graph": graph,
+    })
+    result = parse_excel_file(wb, "homo-no-type")
+    assert result["is_heterogeneous"] is False
+    assert list(result["node_dfs"].keys()) == ["default"]
+    assert list(result["edge_dfs"].keys()) == ["default"]
+    assert result["node_dfs"]["default"]["_node_type"].unique().tolist() == ["default"]
+    assert result["edge_dfs"]["default"]["_edge_type"].unique().tolist() == ["default"]
