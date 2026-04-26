@@ -59,3 +59,64 @@ def test_homogeneous_explore_unchanged():
     # Legacy path uses unified counts: x2 has 1/4 missing.
     assert by_name["x2"]["missing_count"] == 1
     assert by_name["x1"]["missing_count"] == 0
+
+
+def test_hetero_three_types_cell_area_not_missing():
+    """Simulate real chip-design hetero graph with cell/pin/net node types.
+
+    The unified DataFrame has NaN cross-contamination (cell_area is NaN for
+    pin and net rows, pin_cap is NaN for cell and net rows, etc.).  When
+    per-type DataFrames are supplied, missing_count for each feature must be 0
+    because each type only carries its own columns.
+    """
+    cell_df = pd.DataFrame({
+        "node_id": [0, 1, 2],
+        "_graph": [1, 1, 1],
+        "_node_type": ["cell"] * 3,
+        "cell_area": [1.1, 2.2, 3.3],
+        "cell_drive": [1, 2, 4],
+    })
+    pin_df = pd.DataFrame({
+        "node_id": [3, 4, 5, 6],
+        "_graph": [1, 1, 1, 1],
+        "_node_type": ["pin"] * 4,
+        "pin_cap": [0.5, 0.6, 0.7, 0.8],
+    })
+    net_df = pd.DataFrame({
+        "node_id": [7, 8],
+        "_graph": [1, 1],
+        "_node_type": ["net"] * 2,
+        "net_fanout": [3.0, 5.0],
+    })
+    # The unified concat mimics what parse_excel_file returns for nodes_df.
+    # cell_area, cell_drive, pin_cap, net_fanout are NaN for unrelated types.
+    unified = pd.concat([cell_df, pin_df, net_df], ignore_index=True)
+
+    # Sanity-check: the unified frame DOES have NaN cross-contamination.
+    assert unified["cell_area"].isna().sum() == 6  # pin (4) + net (2) rows
+    assert unified["pin_cap"].isna().sum() == 5    # cell (3) + net (2) rows
+    assert unified["net_fanout"].isna().sum() == 7  # cell (3) + pin (4) rows
+
+    stats = compute_generic_explore(
+        unified, pd.DataFrame(columns=["src_id", "dst_id"]),
+        is_heterogeneous=True,
+        node_types=["cell", "pin", "net"],
+        edge_types=[],
+        canonical_edges=[],
+        node_dfs={"cell": cell_df, "pin": pin_df, "net": net_df},
+        edge_dfs={},
+    )
+
+    by_name = {(c["name"], c.get("node_type")): c for c in stats["columns"]}
+
+    # Each type-scoped feature must have 0 missing under its own type.
+    assert by_name[("cell_area", "cell")]["missing_count"] == 0
+    assert by_name[("cell_drive", "cell")]["missing_count"] == 0
+    assert by_name[("pin_cap", "pin")]["missing_count"] == 0
+    assert by_name[("net_fanout", "net")]["missing_count"] == 0
+
+    # Cross-type columns must not appear (each per-type df only has its own cols).
+    assert ("cell_area", "pin") not in by_name
+    assert ("cell_area", "net") not in by_name
+    assert ("pin_cap", "cell") not in by_name
+    assert ("net_fanout", "cell") not in by_name

@@ -794,13 +794,17 @@ function deriveQualityChecks(
         });
     }
 
-    // 6. NaN / Inf in node features — use missing_count from columns
+    // 6. NaN / Inf in node features — use missing_count from columns.
+    // For heterogeneous graphs the backend computes missing_count per node type,
+    // so cross-type NaN padding (e.g. cell_area is NaN for pin/net rows) is NOT
+    // counted here — those columns simply don't appear under unrelated types.
     if (exploreData) {
         const missingTotal = exploreData.columns.reduce((s, c) => s + (c.missing_count || 0), 0);
         const status: QualityStatus = missingTotal === 0 ? 'ok' : missingTotal < 50 ? 'warn' : 'err';
+        const heteroNote = exploreData.is_heterogeneous ? ' (type-scoped NaN excluded)' : '';
         checks.push({
             key: 'nan', label: 'Feature NaN / missing',
-            status, detail: `${missingTotal} missing cell(s) across ${exploreData.columns.length} cols`,
+            status, detail: `${missingTotal} missing cell(s) across ${exploreData.columns.length} cols${heteroNote}`,
         });
     }
 
