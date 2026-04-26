@@ -96,7 +96,7 @@ export default function GraphPreview({ graphSample, height: heightProp }: GraphP
       }))
       .filter(l => nodeIdSet.has(l.source) && nodeIdSet.has(l.target));
     return { nodes, links };
-  }, [graphSample]);
+  }, [graphSample, typeColors]);
 
   const detailNode = useMemo(() => {
     const id = selectedNodeId || hoveredNodeId;

@@ -60,6 +60,10 @@ export default function ExplorePage() {
     const [graphSampleLoading, setGraphSampleLoading] = useState(false);
     const [selectedGraph, setSelectedGraph] = useState<string | undefined>(undefined);
     const [graphFullscreen, setGraphFullscreen] = useState(false);
+    // windowHeight is initialized to 640 (matches SSR fallback) and updated
+    // after mount to avoid a hydration mismatch from window.innerHeight in render.
+    const [windowHeight, setWindowHeight] = useState(640);
+    useEffect(() => { setWindowHeight(window.innerHeight); }, []);
 
     const fetchGraphSample = useCallback((graphName?: string) => {
         if (!projectId) return;
@@ -457,7 +461,7 @@ export default function ExplorePage() {
                     destroyOnClose
                 >
                     {graphSample && graphSample.nodes.length > 0 && (
-                        <GraphPreview graphSample={graphSample} height={Math.max(480, typeof window !== 'undefined' ? window.innerHeight - 220 : 640)} />
+                        <GraphPreview graphSample={graphSample} height={Math.max(480, windowHeight - 220)} />
                     )}
                 </Modal>
 
