@@ -37,6 +37,14 @@ def _write(path: Path, sheets: dict[str, pd.DataFrame]) -> None:
 # Schema: Parameter sheet declares Type="default" for all levels.
 # Data sheets (Node / Edge / Graph) have NO Type column.
 
+def _homo_edge(gid: int, s: int, d: int, rng: random.Random) -> dict:
+    return {
+        "Graph_ID": gid, "Source_Node_ID": s, "Target_Node_ID": d,
+        "wire_cap_ff": round(rng.uniform(0.1, 5.0), 3),
+        "wire_length_um": round(rng.uniform(1.0, 100.0), 2),
+    }
+
+
 def make_homo(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
     rng = random.Random(SEED)
     parameter = pd.DataFrame([
@@ -68,16 +76,27 @@ def make_homo(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
                 "depth": rng.randint(1, 10),
             })
         n_edges = int(n_nodes * 1.5)
+        g_edges: list[dict] = []
         for _ in range(n_edges):
             s = rng.choice(node_ids)
             d = rng.choice(node_ids)
             if s == d:
                 continue
-            edge_rows.append({
-                "Graph_ID": gid, "Source_Node_ID": s, "Target_Node_ID": d,
-                "wire_cap_ff": round(rng.uniform(0.1, 5.0), 3),
-                "wire_length_um": round(rng.uniform(1.0, 100.0), 2),
-            })
+            g_edges.append(_homo_edge(gid, s, d, rng))
+
+        # Coverage pass: ensure every node appears in at least one edge.
+        covered = set()
+        for e in g_edges:
+            covered.add(e["Source_Node_ID"])
+            covered.add(e["Target_Node_ID"])
+        for nid in node_ids:
+            if nid not in covered:
+                # Connect isolated node to a random different node.
+                others = [x for x in node_ids if x != nid]
+                partner = rng.choice(others)
+                g_edges.append(_homo_edge(gid, nid, partner, rng))
+
+        edge_rows.extend(g_edges)
         graph_rows.append({
             "Graph_ID": gid,
             "num_cells": n_nodes,
@@ -171,11 +190,12 @@ def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
 
         # cell_pin edges: each cell connects to its pins
         total_wl = 0.0
+        g_edges: list[dict] = []
         for i, cid in enumerate(cell_ids):
             for j in range(n_pins_per_cell):
                 pid = pin_ids[i * n_pins_per_cell + j]
                 resistance = round(rng.uniform(1.0, 50.0), 2)
-                edge_rows.append({
+                g_edges.append({
                     "Graph_ID": gid,
                     "Source_Node_ID": cid, "Target_Node_ID": pid,
                     "Type": "cell_pin",
@@ -189,7 +209,7 @@ def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
             for pid in connected:
                 wl = round(rng.uniform(5.0, 200.0), 2)
                 total_wl += wl
-                edge_rows.append({
+                g_edges.append({
                     "Graph_ID": gid,
                     "Source_Node_ID": pid, "Target_Node_ID": nid,
                     "Type": "pin_net",
@@ -197,6 +217,58 @@ def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
                     "pn_wire_length_um": wl,
                 })
 
+        # Coverage pass: ensure every node appears in at least one edge.
+        covered = set()
+        for e in g_edges:
+            covered.add(e["Source_Node_ID"])
+            covered.add(e["Target_Node_ID"])
+
+        # cell nodes that are isolated: add a cell_pin edge to a random pin
+        for cid in cell_ids:
+            if cid not in covered:
+                pid = rng.choice(pin_ids)
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": cid, "Target_Node_ID": pid,
+                    "Type": "cell_pin",
+                    "cp_resistance_ohm": round(rng.uniform(1.0, 50.0), 2),
+                    "pn_wire_length_um": None,
+                })
+                covered.add(cid)
+                covered.add(pid)
+
+        # pin nodes that are isolated: add a pin_net edge to a random net
+        for pid in pin_ids:
+            if pid not in covered:
+                nid = rng.choice(net_ids)
+                wl = round(rng.uniform(5.0, 200.0), 2)
+                total_wl += wl
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": pid, "Target_Node_ID": nid,
+                    "Type": "pin_net",
+                    "cp_resistance_ohm": None,
+                    "pn_wire_length_um": wl,
+                })
+                covered.add(pid)
+                covered.add(nid)
+
+        # net nodes that are isolated: add a pin_net edge from a random pin
+        for nid in net_ids:
+            if nid not in covered:
+                pid = rng.choice(pin_ids)
+                wl = round(rng.uniform(5.0, 200.0), 2)
+                total_wl += wl
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": pid, "Target_Node_ID": nid,
+                    "Type": "pin_net",
+                    "cp_resistance_ohm": None,
+                    "pn_wire_length_um": wl,
+                })
+                covered.add(nid)
+
+        edge_rows.extend(g_edges)
         graph_rows.append({
             "Graph_ID": gid,
             "num_cells": n_cells,

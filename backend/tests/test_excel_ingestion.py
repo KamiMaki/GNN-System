@@ -350,3 +350,87 @@ def test_homogeneous_still_works_without_type_column():
     assert list(result["edge_dfs"].keys()) == ["default"]
     assert result["node_dfs"]["default"]["_node_type"].unique().tolist() == ["default"]
     assert result["edge_dfs"]["default"]["_edge_type"].unique().tolist() == ["default"]
+
+
+def test_shared_feature_across_types():
+    """Feature 'area' declared for both cell and pin types should populate
+    in both per-type DataFrames and have no spurious missing counts.
+
+    Audit confirmation: _split_by_type retains ALL columns from the unified
+    sheet for each per-type sub-frame (only the Type column is dropped).
+    A shared column like 'area' that exists in the unified sheet will therefore
+    appear in BOTH the cell and pin DataFrames with their respective row values.
+    """
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "area"},
+        {"XY": "X", "Level": "Node", "Type": "pin",  "Parameter": "area"},
+        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "cell_only"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "score"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 1, 1],
+        "Node": [0, 1, 2, 3],
+        "Type": ["cell", "cell", "pin", "pin"],
+        "area": [1.0, 2.0, 3.0, 4.0],
+        "cell_only": [10.0, 20.0, None, None],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "score": [42.5]})
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes, "Graph": graph})
+    result = parse_excel_file(wb, "shared")
+    assert result["is_heterogeneous"] is True
+    assert set(result["node_dfs"].keys()) == {"cell", "pin"}
+    # area is in BOTH per-type frames
+    assert "area" in result["node_dfs"]["cell"].columns
+    assert "area" in result["node_dfs"]["pin"].columns
+    # cell_only column is present in the unified sheet, so it appears in both
+    # sub-frames (the split only drops the Type column).  The pin rows have NaN
+    # for cell_only, which is correct — type-scoped missing-count logic lives
+    # above this layer and handles the NaN appropriately.
+    assert "cell_only" in result["node_dfs"]["cell"].columns
+    # Both per-type cell areas equal [1, 2]; pin areas equal [3, 4]
+    assert list(result["node_dfs"]["cell"]["area"]) == [1.0, 2.0]
+    assert list(result["node_dfs"]["pin"]["area"]) == [3.0, 4.0]
+    # cell rows have real cell_only values; pin rows have NaN
+    assert list(result["node_dfs"]["cell"]["cell_only"]) == [10.0, 20.0]
+    assert result["node_dfs"]["pin"]["cell_only"].isna().all()
+
+
+def test_canonical_edges_only_from_observed_triples():
+    """canonical_edges should reflect only (src_type, rel, dst_type) actually
+    present in edge data, not Cartesian product over node/edge types."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node",  "Type": "cell",    "Parameter": "f1"},
+        {"XY": "X", "Level": "Node",  "Type": "pin",     "Parameter": "f2"},
+        {"XY": "X", "Level": "Node",  "Type": "net",     "Parameter": "f3"},
+        {"XY": "X", "Level": "Edge",  "Type": "cell_pin","Parameter": "ew"},
+        {"XY": "X", "Level": "Edge",  "Type": "pin_net", "Parameter": "wl"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1] * 6,
+        "Node":     [0, 1, 2, 3, 4, 5],
+        "Type":     ["cell", "cell", "pin", "pin", "net", "net"],
+        "f1": [1.0, 2.0, None, None, None, None],
+        "f2": [None, None, 3.0, 4.0, None, None],
+        "f3": [None, None, None, None, 5.0, 6.0],
+    })
+    edges = pd.DataFrame({
+        "Graph_ID":      [1, 1, 1, 1],
+        "Source_Node_ID":[0, 1, 2, 3],
+        "Target_Node_ID":[2, 3, 4, 5],
+        "Type":          ["cell_pin", "cell_pin", "pin_net", "pin_net"],
+        "ew": [0.1, 0.2, None, None],
+        "wl": [None, None, 10.0, 20.0],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "y": [42.0]})
+    wb = _build_workbook({
+        "Parameter": parameter,
+        "Node": nodes,
+        "Edge": edges,
+        "Graph": graph,
+    })
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is True
+    triples = set(map(tuple, result["canonical_edges"]))
+    assert triples == {("cell", "cell_pin", "pin"), ("pin", "pin_net", "net")}, \
+        f"Expected only observed triples, got {triples}"

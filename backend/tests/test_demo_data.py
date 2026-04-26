@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from app.data.excel_ingestion import parse_excel_file
@@ -50,3 +51,33 @@ def test_demo_hetero_parses_and_is_heterogeneous():
     total_typed = sum(len(df) for df in parsed["node_dfs"].values())
     assert len(parsed["nodes_df"]) == total_typed
     assert parsed["graph_df"] is not None
+    # canonical_edges must be exactly the 2 observed triples, not a Cartesian product
+    triples = set(map(tuple, parsed["canonical_edges"]))
+    assert triples == {("cell", "cell_pin", "pin"), ("pin", "pin_net", "net")}, \
+        f"Unexpected canonical_edges: {triples}"
+
+
+def _isolated_nodes(nodes_df: pd.DataFrame, edges_df: pd.DataFrame, graph_id: int) -> list:
+    """Return list of node IDs in graph_id that appear in no edge."""
+    g_nodes = nodes_df[nodes_df["_graph"] == graph_id]["node_id"].tolist()
+    if edges_df.empty:
+        return g_nodes
+    g_edges = edges_df[edges_df["_graph"] == graph_id]
+    connected = set(g_edges["src_id"].tolist()) | set(g_edges["dst_id"].tolist())
+    return [n for n in g_nodes if n not in connected]
+
+
+def test_demo_homo_no_isolated_nodes_first_graph():
+    """First graph of the homo demo must have zero isolated nodes."""
+    parsed = parse_excel_file(_read("demo_multigraph_homo.v2.xlsx"), "homo")
+    first_gid = parsed["nodes_df"]["_graph"].iloc[0]
+    isolated = _isolated_nodes(parsed["nodes_df"], parsed["edges_df"], first_gid)
+    assert isolated == [], f"Isolated nodes in graph {first_gid}: {isolated}"
+
+
+def test_demo_hetero_no_isolated_nodes_first_graph():
+    """First graph of the hetero demo must have zero isolated nodes."""
+    parsed = parse_excel_file(_read_hetero(), "hetero")
+    first_gid = parsed["nodes_df"]["_graph"].iloc[0]
+    isolated = _isolated_nodes(parsed["nodes_df"], parsed["edges_df"], first_gid)
+    assert isolated == [], f"Isolated nodes in graph {first_gid}: {isolated}"

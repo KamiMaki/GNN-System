@@ -258,14 +258,29 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
         else pd.DataFrame(columns=["src_id", "dst_id"])
     )
 
-    # Canonical edges.
+    # Canonical edges: derive from observed (src_type, edge_type, dst_type) triples
+    # rather than a Cartesian product over all node/edge type combinations.
     canonical_edges: list[tuple[str, str, str]] = []
     if edge_dfs:
         if is_heterogeneous:
-            for src_t in node_dfs:
-                for et in edge_dfs:
-                    for dst_t in node_dfs:
-                        canonical_edges.append((src_t, et, dst_t))
+            # Build node_id -> _node_type lookup from the unified nodes frame.
+            node_type_lookup: dict[str, str] = dict(
+                zip(
+                    unified_nodes["node_id"].astype(str),
+                    unified_nodes["_node_type"].astype(str),
+                )
+            )
+            seen: set[tuple[str, str, str]] = set()
+            for et, edf in edge_dfs.items():
+                for _, row in edf.iterrows():
+                    s = node_type_lookup.get(str(row["src_id"]))
+                    d = node_type_lookup.get(str(row["dst_id"]))
+                    if s is None or d is None:
+                        continue
+                    triple = (s, et, d)
+                    if triple not in seen:
+                        seen.add(triple)
+                        canonical_edges.append(triple)
         else:
             node_t = next(iter(node_dfs))
             edge_t = next(iter(edge_dfs))
