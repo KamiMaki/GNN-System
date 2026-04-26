@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { sanitizeParam } from '@/lib/sanitize';
 import {
     Button, Card, Tag, Slider, Alert, Spin, Space, Table, Tooltip, Progress, Typography, Checkbox, Row, Col, theme,
-    Select, Divider,
+    Divider,
 } from 'antd';
 import {
     PlayCircleOutlined, AppstoreOutlined, ClockCircleOutlined,
@@ -21,35 +21,6 @@ import {
 const { Title, Text } = Typography;
 
 const ALL_MODELS = ['gcn', 'gat', 'sage', 'gin', 'mlp'];
-
-// Model-family friendly labels (shown next to each checkbox per Darren's v2 comment).
-const MODEL_FAMILY_HINTS: Record<string, string> = {
-    gat: 'attention',
-    gcn: 'graph conv',
-    sage: 'sample + aggregate',
-    gin: 'isomorphism',
-    mlp: 'baseline (no edges)',
-};
-
-// Objective options per task type. Backend currently auto-picks; this is a UI preview hint
-// stored locally — can be wired to a backend param later.
-const OBJECTIVE_OPTIONS: Record<string, Array<{ value: string; label: string }>> = {
-    classification: [
-        { value: 'val_acc', label: 'val_acc (maximize)' },
-        { value: 'val_f1', label: 'val_f1 (maximize)' },
-        { value: 'val_auroc', label: 'val_auroc (maximize)' },
-    ],
-    regression: [
-        { value: 'val_rmse', label: 'val_rmse (minimize)' },
-        { value: 'val_mae', label: 'val_mae (minimize)' },
-        { value: 'val_r2', label: 'val_r2 (maximize)' },
-    ],
-};
-
-function objectiveOptionsFor(taskType?: string): Array<{ value: string; label: string }> {
-    if (!taskType) return OBJECTIVE_OPTIONS.classification;
-    return taskType.endsWith('regression') ? OBJECTIVE_OPTIONS.regression : OBJECTIVE_OPTIONS.classification;
-}
 
 function formatTime(seconds: number): string {
     if (seconds < 0) return '\u2014';
@@ -70,7 +41,6 @@ export default function TrainPage() {
     // an empty models array to the backend (backend already treats that as "search all").
     const [selectedModels, setSelectedModels] = useState<string[]>(ALL_MODELS);
     const [nTrials, setNTrials] = useState(150);
-    const [objective, setObjective] = useState<string>('val_acc');
     const [estimate, setEstimate] = useState<TrainingEstimate | null>(null);
     const [estimateLoading, setEstimateLoading] = useState(false);
 
@@ -198,16 +168,6 @@ export default function TrainPage() {
         setSelectedModels(checked ? ALL_MODELS : []);
     };
 
-    // Sync default objective with project's task type when project loads.
-    useEffect(() => {
-        if (!project?.task_type) return;
-        const opts = objectiveOptionsFor(project.task_type);
-        if (!opts.find(o => o.value === objective)) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local state with external data
-            setObjective(opts[0].value);
-        }
-    }, [project?.task_type, objective]);
-
     const experimentColumns = [
         { title: '#', dataIndex: 'index', key: 'index', width: 50 },
         { title: 'Model', dataIndex: 'model', key: 'model' },
@@ -280,7 +240,7 @@ export default function TrainPage() {
                                     checked={allSelected}
                                     onChange={(e) => toggleSelectAll(e.target.checked)}
                                 >
-                                    <Text strong>Select all (AutoML · try all)</Text>
+                                    <Text strong>Select all</Text>
                                 </Checkbox>
                                 <Divider style={{ margin: '8px 0' }} />
                                 <Checkbox.Group
@@ -289,17 +249,9 @@ export default function TrainPage() {
                                     style={{ width: '100%' }}
                                 >
                                     <Space direction="vertical" size={6}>
-                                        {ALL_MODELS.map((m) => (
-                                            <Tooltip
-                                                key={m}
-                                                title={hasEdgeAttrs && m === 'mlp' ? 'MLP does not use edge attributes' : ''}
-                                            >
-                                                <Checkbox value={m}>
-                                                    <Text strong>{m.toUpperCase()}</Text>
-                                                    <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-                                                        {MODEL_FAMILY_HINTS[m]}
-                                                    </Text>
-                                                </Checkbox>
+                                        {ALL_MODELS.map(m => (
+                                            <Tooltip key={m} title={hasEdgeAttrs && m === 'mlp' ? 'MLP does not use edge attributes' : ''}>
+                                                <Checkbox value={m}>{m.toUpperCase()}</Checkbox>
                                             </Tooltip>
                                         ))}
                                     </Space>
@@ -323,19 +275,6 @@ export default function TrainPage() {
                                     />
                                 )}
                             </Space>
-                        </Card>
-
-                        <Card title="Objective" size="small">
-                            <Select
-                                value={objective}
-                                onChange={setObjective}
-                                style={{ width: '100%' }}
-                                options={objectiveOptionsFor(project?.task_type)}
-                                disabled={isRunning}
-                            />
-                            <Text type="secondary" style={{ fontSize: 11, marginTop: 6, display: 'block' }}>
-                                Optuna optimizes this metric during search.
-                            </Text>
                         </Card>
 
                         <Card title="Optuna Trials" size="small">

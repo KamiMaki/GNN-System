@@ -52,7 +52,9 @@ class SAGEClassifier(pl.LightningModule):
         out = self(batch.x, batch.edge_index, batch.edge_attr, batch=batch.batch if hasattr(batch, "batch") else None)
         if self.task_type.endswith("regression"):
             loss = F.mse_loss(out, batch.y)
+            mae = (out - batch.y).abs().mean()
             self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.num_nodes)
+            self.log(f"{stage}_mae", mae, prog_bar=False, batch_size=batch.num_nodes)
         else:
             weight = self.class_weights.to(out.device) if self.class_weights is not None else None
             loss = F.cross_entropy(out, batch.y, weight=weight)

@@ -81,13 +81,14 @@ def _device_pair() -> tuple[str, str]:
 
 
 def _trainer(task_id: str, max_epochs: int, callbacks: list, checkpoint_dir: Path,
-             accelerator: str, precision: str) -> pl.Trainer:
+             accelerator: str, precision: str, is_regression: bool = False) -> pl.Trainer:
+    monitor = "val_mae" if is_regression else "val_loss"
     ckpt = pl.callbacks.ModelCheckpoint(
         dirpath=str(checkpoint_dir), filename="best",
-        monitor="val_loss", mode="min", save_top_k=1, save_weights_only=True,
+        monitor=monitor, mode="min", save_top_k=1, save_weights_only=True,
     )
     es = pl.callbacks.EarlyStopping(
-        monitor="val_loss", patience=settings.PATIENCE, mode="min",
+        monitor=monitor, patience=settings.PATIENCE, mode="min",
     )
     return pl.Trainer(
         max_epochs=max_epochs,
@@ -342,6 +343,7 @@ def run_training_task(task_id: str) -> None:
             task_id=task_id, max_epochs=settings.MAX_EPOCHS,
             callbacks=[progress_cb], checkpoint_dir=ckpt_dir,
             accelerator=accelerator, precision=precision,
+            is_regression=is_regression,
         )
 
         t0 = time.time()

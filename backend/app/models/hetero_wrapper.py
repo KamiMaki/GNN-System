@@ -118,9 +118,12 @@ class HeteroGraphRegressor(pl.LightningModule):
 
         if self.task_type.endswith("regression"):
             loss = F.mse_loss(out, batch.y)
+            mae = (out - batch.y).abs().mean()
+            self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.y.size(0))
+            self.log(f"{stage}_mae", mae, prog_bar=False, batch_size=batch.y.size(0))
         else:
             loss = F.cross_entropy(out, batch.y.long())
-        self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.y.size(0))
+            self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.y.size(0))
         return loss
 
     def training_step(self, batch, batch_idx):
