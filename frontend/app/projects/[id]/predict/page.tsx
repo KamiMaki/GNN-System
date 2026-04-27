@@ -134,6 +134,12 @@ export default function PredictPage() {
     const showGraph = summary ? summary.total <= GRAPH_VIZ_THRESHOLD : false;
     const histogram = useMemo(() => (summary ? confidenceHistogram(summary.predictions) : []), [summary]);
 
+    // Confidence is a classification concept. For regression tasks the model emits
+    // continuous values, not class probabilities — hide all confidence-related UI.
+    const isRegression = summary?.taskType?.endsWith('regression') ?? false;
+    const isGraphTask = summary?.taskType?.startsWith('graph') ?? false;
+    const itemLabel = isGraphTask ? 'Graph' : 'Node';
+
     // Reviewer queue: predictions with confidence below the 70% threshold.
     const reviewQueue = useMemo(
         () => (summary?.predictions || [])
@@ -305,28 +311,32 @@ export default function PredictPage() {
                         <Card><Empty description="No predictions yet — run inference or complete a training run." /></Card>
                     ) : (
                         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                            {/* Summary strip */}
+                            {/* Summary strip — regression skips confidence-derived stats. */}
                             <Row gutter={8}>
-                                <Col span={8}>
-                                    <Card size="small">
-                                        <Statistic
-                                            title="Avg confidence"
-                                            value={summary.avgConfidence * 100}
-                                            precision={1}
-                                            suffix="%"
-                                        />
-                                    </Card>
-                                </Col>
-                                <Col span={8}>
-                                    <Card size="small">
-                                        <Statistic
-                                            title="Needs review"
-                                            value={summary.lowConfidenceCount}
-                                            valueStyle={{ color: summary.lowConfidenceCount > 0 ? token.colorWarning : token.colorSuccess }}
-                                        />
-                                    </Card>
-                                </Col>
-                                <Col span={8}>
+                                {!isRegression && (
+                                    <>
+                                        <Col span={8}>
+                                            <Card size="small">
+                                                <Statistic
+                                                    title="Avg confidence"
+                                                    value={summary.avgConfidence * 100}
+                                                    precision={1}
+                                                    suffix="%"
+                                                />
+                                            </Card>
+                                        </Col>
+                                        <Col span={8}>
+                                            <Card size="small">
+                                                <Statistic
+                                                    title="Needs review"
+                                                    value={summary.lowConfidenceCount}
+                                                    valueStyle={{ color: summary.lowConfidenceCount > 0 ? token.colorWarning : token.colorSuccess }}
+                                                />
+                                            </Card>
+                                        </Col>
+                                    </>
+                                )}
+                                <Col span={isRegression ? 24 : 8}>
                                     <Card size="small">
                                         <Statistic title="Predictions" value={summary.total} />
                                     </Card>
@@ -348,7 +358,7 @@ export default function PredictPage() {
                                 />
                             )}
 
-                            {/* Per-node predictions table */}
+                            {/* Per-item predictions table — column set depends on task. */}
                             <Card size="small" title="Predictions">
                                 <Table<NodePrediction>
                                     size="small"
@@ -356,7 +366,7 @@ export default function PredictPage() {
                                     dataSource={summary.predictions}
                                     pagination={{ pageSize: 20, showSizeChanger: true }}
                                     columns={[
-                                        { title: 'Node', dataIndex: 'node_id', key: 'node_id', width: 100 },
+                                        { title: itemLabel, dataIndex: 'node_id', key: 'node_id', width: 100 },
                                         { title: 'True', dataIndex: 'true_label', key: 'true_label', width: 110 },
                                         {
                                             title: 'Predicted',
@@ -369,7 +379,7 @@ export default function PredictPage() {
                                             ),
                                             width: 130,
                                         },
-                                        {
+                                        ...(isRegression ? [] : [{
                                             title: 'Confidence',
                                             dataIndex: 'confidence',
                                             key: 'confidence',
@@ -381,7 +391,7 @@ export default function PredictPage() {
                                                     status={c < 0.7 ? 'exception' : 'success'}
                                                 />
                                             ) : '—',
-                                        },
+                                        }]),
                                     ]}
                                 />
                             </Card>
@@ -389,8 +399,8 @@ export default function PredictPage() {
                     )}
                 </Col>
 
-                {/* ═══ Right · Confidence + Review Queue ═══ */}
-                <Col xs={24} md={6}>
+                {/* ═══ Right · Confidence + Review Queue (classification only) ═══ */}
+                <Col xs={24} md={6} style={{ display: isRegression ? 'none' : undefined }}>
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                         <Card title="Confidence histogram" size="small">
                             {histogram.length > 0 ? (

@@ -187,15 +187,20 @@ export default function ExplorePage() {
 
     const canConfirm = Boolean(labelValidation?.valid) && !confirming;
 
-    // Build attribute summary table data
+    // Build attribute summary table data.
+    // For hetero datasets the same feature name can appear under multiple node/edge
+    // types (shared features). React keys must include the type so duplicates
+    // don't collide.
     const attrTableData = [
         ...exploreData.columns.map((col) => {
             const role = col.name === labelColumn ? 'label'
                 : col.name.toLowerCase() === 'node_id' ? 'id'
                     : 'feature';
+            const typeSuffix = col.node_type ? `:${col.node_type}` : '';
+            const displayName = col.node_type ? `${col.name} (${col.node_type})` : col.name;
             return {
-                key: `node-${col.name}`,
-                name: col.name,
+                key: `node-${col.name}${typeSuffix}`,
+                name: displayName,
                 dtype: col.dtype,
                 role,
                 source: 'node',
@@ -204,16 +209,20 @@ export default function ExplorePage() {
                 unique: col.unique_count,
             };
         }),
-        ...(exploreData.edge_columns || []).map((col) => ({
-            key: `edge-${col.name}`,
-            name: col.name,
-            dtype: col.dtype,
-            role: 'edge_attr',
-            source: 'edge',
-            missing: col.missing_count,
-            missingPct: col.missing_pct,
-            unique: col.unique_count,
-        })),
+        ...(exploreData.edge_columns || []).map((col) => {
+            const typeSuffix = col.edge_type ? `:${col.edge_type}` : '';
+            const displayName = col.edge_type ? `${col.name} (${col.edge_type})` : col.name;
+            return {
+                key: `edge-${col.name}${typeSuffix}`,
+                name: displayName,
+                dtype: col.dtype,
+                role: 'edge_attr',
+                source: 'edge',
+                missing: col.missing_count,
+                missingPct: col.missing_pct,
+                unique: col.unique_count,
+            };
+        }),
     ];
 
     const attrColumns = [
@@ -330,7 +339,8 @@ export default function ExplorePage() {
 
                     <Text strong>Feature Correlation</Text>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', margin: '8px 0 16px' }}>
-                        {numericColumns.map(col => (
+                        {/* For hetero, dedupe columns by name — corrColumns is keyed by column name. */}
+                        {Array.from(new Map(numericColumns.map(c => [c.name, c])).values()).map(col => (
                             <Checkbox
                                 key={col.name}
                                 checked={corrColumns.includes(col.name)}

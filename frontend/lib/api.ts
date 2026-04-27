@@ -124,6 +124,9 @@ export interface ColumnInfo {
   missing_count: number;
   missing_pct: number;
   unique_count: number;
+  // Set on hetero datasets where the same feature can repeat across node/edge types.
+  node_type?: string | null;
+  edge_type?: string | null;
 }
 
 export interface GenericExploreData {

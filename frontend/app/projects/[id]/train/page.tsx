@@ -20,7 +20,11 @@ import {
 
 const { Title, Text } = Typography;
 
-const ALL_MODELS = ['gcn', 'gat', 'sage', 'gin', 'mlp'];
+const ALL_MODELS_HOMO = ['gcn', 'gat', 'sage', 'gin', 'mlp'];
+// Heterogeneous graphs: GCN/GIN are excluded — both rely on assumptions
+// (single relation type, inner MLP) that break under PyG's `to_hetero` transform.
+// Backend skips them for hetero datasets, so the UI must too.
+const ALL_MODELS_HETERO = ['gat', 'sage', 'mlp'];
 
 function formatTime(seconds: number): string {
     if (seconds < 0) return '\u2014';
@@ -39,7 +43,7 @@ export default function TrainPage() {
 
     // v2: single checkbox list. "Select all" is the AutoML affordance — equivalent to sending
     // an empty models array to the backend (backend already treats that as "search all").
-    const [selectedModels, setSelectedModels] = useState<string[]>(ALL_MODELS);
+    const [selectedModels, setSelectedModels] = useState<string[]>(ALL_MODELS_HOMO);
     const [nTrials, setNTrials] = useState(150);
     const [estimate, setEstimate] = useState<TrainingEstimate | null>(null);
     const [estimateLoading, setEstimateLoading] = useState(false);
@@ -56,6 +60,17 @@ export default function TrainPage() {
     const [experiments, setExperiments] = useState<TaskStatus[]>([]);
 
     const hasEdgeAttrs = project?.dataset_summary?.has_edge_attrs;
+    const isHetero = project?.dataset_summary?.is_heterogeneous ?? false;
+    const availableModels = isHetero ? ALL_MODELS_HETERO : ALL_MODELS_HOMO;
+
+    // Drop unsupported models (gcn / gin) when project is hetero — prevents the user
+    // from picking a model the backend will silently skip during training.
+    useEffect(() => {
+        setSelectedModels(prev => {
+            const next = prev.filter(m => availableModels.includes(m));
+            return next.length === prev.length ? prev : (next.length > 0 ? next : availableModels);
+        });
+    }, [isHetero, availableModels]);
 
     useEffect(() => {
         if (!projectId) return;
@@ -141,7 +156,7 @@ export default function TrainPage() {
         try {
             // Backwards-compat: sending [] tells backend "try all" — equivalent to AutoML.
             // Only send the explicit list when the user has narrowed the selection.
-            const allSelected = selectedModels.length === ALL_MODELS.length;
+            const allSelected = selectedModels.length === availableModels.length;
             const models = allSelected ? [] : selectedModels;
             const status = await startProjectTraining(projectId, models, nTrials);
             setTaskStatus(status);
@@ -160,12 +175,12 @@ export default function TrainPage() {
         ? Math.max(0, elapsed * (100 - progress) / progress)
         : -1;
 
-    const allSelected = selectedModels.length === ALL_MODELS.length;
+    const allSelected = selectedModels.length === availableModels.length;
     const noneSelected = selectedModels.length === 0;
     const showEdgeAttrWarning = hasEdgeAttrs && selectedModels.includes('mlp') && !allSelected;
 
     const toggleSelectAll = (checked: boolean) => {
-        setSelectedModels(checked ? ALL_MODELS : []);
+        setSelectedModels(checked ? availableModels : []);
     };
 
     const experimentColumns = [
@@ -236,7 +251,7 @@ export default function TrainPage() {
                                     everything tells the backend to search across every family. Darren's
                                     feedback: IC designers don't want a separate Auto/Manual tab. */}
                                 <Checkbox
-                                    indeterminate={selectedModels.length > 0 && selectedModels.length < ALL_MODELS.length}
+                                    indeterminate={selectedModels.length > 0 && selectedModels.length < availableModels.length}
                                     checked={allSelected}
                                     onChange={(e) => toggleSelectAll(e.target.checked)}
                                 >
@@ -249,7 +264,7 @@ export default function TrainPage() {
                                     style={{ width: '100%' }}
                                 >
                                     <Space direction="vertical" size={6}>
-                                        {ALL_MODELS.map(m => (
+                                        {availableModels.map(m => (
                                             <Tooltip key={m} title={hasEdgeAttrs && m === 'mlp' ? 'MLP does not use edge attributes' : ''}>
                                                 <Checkbox value={m}>{m.toUpperCase()}</Checkbox>
                                             </Tooltip>
