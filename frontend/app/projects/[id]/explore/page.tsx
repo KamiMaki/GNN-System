@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { sanitizeParam } from '@/lib/sanitize';
 import {
@@ -20,7 +20,8 @@ import {
     getProjectExplore, analyzeColumn, getCorrelation, validateLabel, imputeMissing, confirmData,
     getProject, getProjectGraphSample,
     GenericExploreData, ColumnStats, NumericColumnStats, CategoricalColumnStats,
-    LabelValidationResult, GraphSampleData, ProjectDetail,
+    LabelValidationResult, GraphSampleData, ProjectDetail, GraphIndexEntry,
+    PerGraphFeatureSchemaEntry,
 } from '@/lib/api';
 import GraphPreview from '@/components/GraphPreview';
 
@@ -65,17 +66,43 @@ export default function ExplorePage() {
     const [windowHeight, setWindowHeight] = useState(640);
     useEffect(() => { setWindowHeight(window.innerHeight); }, []);
 
+    // LRU cache for individual graph samples (max 10 entries).
+    // Note: cache stores single-graph samples only; graph_index comes from the
+    // initial full-dataset response and is NOT cached here.
+    const graphCacheRef = useRef<Map<string, GraphSampleData>>(new Map());
+    const LRU_LIMIT = 10;
+
+    const fetchGraph = useCallback(async (graphName: string): Promise<GraphSampleData> => {
+        const cache = graphCacheRef.current;
+        const cached = cache.get(graphName);
+        if (cached) {
+            // Bump to MRU position
+            cache.delete(graphName);
+            cache.set(graphName, cached);
+            return cached;
+        }
+        const data = await getProjectGraphSample(projectId, { graph_name: graphName });
+        cache.set(graphName, data);
+        while (cache.size > LRU_LIMIT) {
+            const firstKey = cache.keys().next().value;
+            if (firstKey !== undefined) cache.delete(firstKey);
+        }
+        return data;
+    }, [projectId]);
+
     const fetchGraphSample = useCallback((graphName?: string) => {
         if (!projectId) return;
         setGraphSampleLoading(true);
-        getProjectGraphSample(projectId, 500, graphName)
+        getProjectGraphSample(projectId, { graph_name: graphName })
             .then(data => {
                 setGraphSample(data);
-                if (!graphName && data.graph_names && data.graph_names.length > 0) {
+                // Determine the first graph id from graph_index (preferred) or graph_names fallback.
+                const firstGraph = data.graph_index?.[0]?.id ?? data.graph_names?.[0];
+                if (!graphName && firstGraph) {
                     // Auto-select first graph for multi-graph datasets
-                    setSelectedGraph(data.graph_names[0]);
+                    setSelectedGraph(firstGraph);
                     setGraphSampleLoading(true);
-                    getProjectGraphSample(projectId, 500, data.graph_names[0])
+                    fetchGraph(firstGraph)
                         .then(setGraphSample)
                         .catch(console.error)
                         .finally(() => setGraphSampleLoading(false));
@@ -83,7 +110,7 @@ export default function ExplorePage() {
             })
             .catch(console.error)
             .finally(() => setGraphSampleLoading(false));
-    }, [projectId]);
+    }, [projectId, fetchGraph]);
 
     useEffect(() => {
         if (!projectId) return;
@@ -172,6 +199,15 @@ export default function ExplorePage() {
         }
     };
 
+    // Build graph select options from graph_index (preferred) with fallback to graph_names.
+    // Memoised to avoid rebuilding options on every render.
+    const graphSelectOptions = useMemo(() => {
+        if (graphSample?.graph_index && graphSample.graph_index.length > 0) {
+            return graphSample.graph_index.map((g: GraphIndexEntry) => ({ value: g.id, label: g.id }));
+        }
+        return graphSample?.graph_names?.map(g => ({ value: g, label: g })) ?? [];
+    }, [graphSample?.graph_index, graphSample?.graph_names]);
+
     if (loading || !exploreData) {
         return (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
@@ -207,6 +243,8 @@ export default function ExplorePage() {
                 missing: col.missing_count,
                 missingPct: col.missing_pct,
                 unique: col.unique_count,
+                presencePct: col.presence_pct,
+                lowPresence: col.low_presence_warning,
             };
         }),
         ...(exploreData.edge_columns || []).map((col) => {
@@ -221,6 +259,8 @@ export default function ExplorePage() {
                 missing: col.missing_count,
                 missingPct: col.missing_pct,
                 unique: col.unique_count,
+                presencePct: col.presence_pct,
+                lowPresence: col.low_presence_warning,
             };
         }),
     ];
@@ -238,10 +278,45 @@ export default function ExplorePage() {
         },
         { title: 'Missing %', dataIndex: 'missingPct', key: 'missingPct', render: (v: number) => `${v.toFixed(1)}%` },
         { title: 'Unique', dataIndex: 'unique', key: 'unique' },
+        {
+            title: 'Presence',
+            dataIndex: 'presencePct',
+            key: 'presencePct',
+            render: (v: number | undefined, record: { lowPresence?: boolean }) => {
+                if (v == null) return <Text type="secondary">—</Text>;
+                return (
+                    <Space size={4}>
+                        <Text>{(v * 100).toFixed(2)}%</Text>
+                        {record.lowPresence && (
+                            <Tag color="orange" icon={<WarningOutlined />} style={{ fontSize: 11 }}>
+                                low presence
+                            </Tag>
+                        )}
+                    </Space>
+                );
+            },
+        },
     ];
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px' }}>
+            {/* Schema warnings from backend (typo detection, low presence, etc.) */}
+            {exploreData.schema_warnings && exploreData.schema_warnings.length > 0 && (
+                <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message="Schema Warnings"
+                    description={
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                            {exploreData.schema_warnings.map((w, i) => (
+                                <li key={i}>{w}</li>
+                            ))}
+                        </ul>
+                    }
+                />
+            )}
+
             <div className="page-header" style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -399,22 +474,22 @@ export default function ExplorePage() {
                     title="Interactive Graph Preview"
                     extra={
                         <Space>
-                            {graphSample?.graph_names && graphSample.graph_names.length > 0 && (
+                            {graphSelectOptions.length > 0 && (
                                 <Select
                                     showSearch
                                     value={selectedGraph}
                                     onChange={(v) => {
                                         setSelectedGraph(v);
                                         setGraphSampleLoading(true);
-                                        getProjectGraphSample(projectId, 500, v)
+                                        fetchGraph(v)
                                             .then(setGraphSample)
                                             .catch(console.error)
                                             .finally(() => setGraphSampleLoading(false));
                                     }}
                                     style={{ minWidth: 200 }}
-                                    options={graphSample.graph_names.map(g => ({ value: g, label: g }))}
+                                    options={graphSelectOptions}
                                     filterOption={(input, opt) =>
-                                        (opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                                        String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
                                     }
                                 />
                             )}
@@ -698,6 +773,11 @@ export default function ExplorePage() {
                     />
                 </Card>
 
+                {/* SECTION V: PER-GRAPH FEATURE SCHEMA (shown when backend provides breakdown) */}
+                {exploreData.per_graph_feature_schema && (
+                    <PerGraphFeatureSchemaCard schema={exploreData.per_graph_feature_schema} />
+                )}
+
                 {/* Confirm & Proceed */}
                 {confirmError && <Alert type="error" showIcon message={confirmError} />}
 
@@ -924,6 +1004,50 @@ interface DataQualityCardProps {
     taskType: string;
     labelColumn: string;
     labelValidation: LabelValidationResult | null;
+}
+
+// ════════════════════════════════════════════════════════════════
+// Per-Graph Feature Schema Card — shows which columns appear in
+// which fraction of graphs, grouped by node/edge type.
+// ════════════════════════════════════════════════════════════════
+
+interface PerGraphFeatureSchemaCardProps {
+    schema: Record<string, PerGraphFeatureSchemaEntry>;
+}
+
+function PerGraphFeatureSchemaCard({ schema }: PerGraphFeatureSchemaCardProps) {
+    return (
+        <Card title="V. Per-Graph Feature Schema" data-testid="per-graph-feature-schema">
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                {Object.entries(schema).map(([typeName, entry]) => (
+                    <Card key={typeName} size="small" type="inner" title={<Tag color="geekblue">{typeName}</Tag>}>
+                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                            {entry.union.map(col => {
+                                const pct = entry.presence_per_column[col] ?? 0;
+                                const isLow = entry.low_presence_columns.includes(col);
+                                return (
+                                    <div key={col} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <Text style={{ minWidth: 160, fontSize: 12 }}>{col}</Text>
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                            {(pct * 100).toFixed(0)}% of graphs
+                                        </Text>
+                                        {isLow && (
+                                            <Tag color="orange" icon={<WarningOutlined />} style={{ fontSize: 11 }}>
+                                                low presence
+                                            </Tag>
+                                        )}
+                                        {entry.intersection.includes(col) && (
+                                            <Tag color="green" style={{ fontSize: 11 }}>all graphs</Tag>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </Space>
+                    </Card>
+                ))}
+            </Space>
+        </Card>
+    );
 }
 
 function DataQualityCard({ exploreData, graphSample, taskType, labelColumn, labelValidation }: DataQualityCardProps) {
