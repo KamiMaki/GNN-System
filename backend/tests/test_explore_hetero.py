@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.data.feature_engineering import compute_generic_explore
+from app.data.feature_engineering import compute_generic_explore, compute_per_graph_feature_schema
 
 
 def test_hetero_per_type_explore_has_no_false_missing():
@@ -240,3 +240,85 @@ def test_hetero_three_types_cell_area_not_missing():
     assert ("cell_area", "net") not in by_name
     assert ("pin_cap", "cell") not in by_name
     assert ("net_fanout", "cell") not in by_name
+
+
+# ── Step 2: per-graph feature schema + presence rate tests ─────────────────
+
+def test_per_graph_feature_schema():
+    """CAP type: graph_1 has [A, B], graph_2 has [A, C].
+
+    Expected: union=[A,B,C], intersection=[A],
+    presence_per_column={A:1.0, B:0.5, C:0.5}
+    """
+    cap_df = pd.DataFrame({
+        "_graph": ["graph_1", "graph_1", "graph_2", "graph_2"],
+        "_node_type": ["CAP"] * 4,
+        "A": [1.0, 2.0, 3.0, 4.0],   # present in both graphs
+        "B": [0.1, 0.2, None, None],   # present only in graph_1
+        "C": [None, None, 0.3, 0.4],   # present only in graph_2
+    })
+
+    schema = compute_per_graph_feature_schema({"CAP": cap_df})
+
+    assert "CAP" in schema
+    cap = schema["CAP"]
+
+    assert sorted(cap["union"]) == ["A", "B", "C"]
+    assert cap["intersection"] == ["A"]
+    assert cap["presence_per_column"]["A"] == 1.0
+    assert cap["presence_per_column"]["B"] == 0.5
+    assert cap["presence_per_column"]["C"] == 0.5
+    assert cap["low_presence_columns"] == []
+
+
+def test_presence_pct_in_column_stats():
+    """Column stats include presence_pct and low_presence_warning fields."""
+    cell_df = pd.DataFrame({
+        "_graph": [1, 1, 1, 1],
+        "_node_type": ["cell"] * 4,
+        "area": [1.0, 2.0, None, 4.0],  # 3/4 present → 75%
+        "score": [None, None, None, None],  # 0/4 present → 0%
+    })
+    unified = cell_df.copy()
+
+    stats = compute_generic_explore(
+        unified, pd.DataFrame(columns=["src_id", "dst_id"]),
+        is_heterogeneous=True,
+        node_types=["cell"], edge_types=[],
+        canonical_edges=[],
+        node_dfs={"cell": cell_df},
+        edge_dfs={},
+    )
+    by_key = {(c["name"], c.get("node_type")): c for c in stats["columns"]}
+
+    area = by_key[("area", "cell")]
+    assert "presence_pct" in area
+    assert "low_presence_warning" in area
+    assert area["presence_pct"] == 75.0
+
+    score = by_key[("score", "cell")]
+    assert score["presence_pct"] == 0.0
+
+
+def test_low_presence_warning_flagged():
+    """Column D present in 5% of graphs (1 of 20) → low_presence_warning True."""
+    rows = []
+    for gid in range(20):
+        # Column D only has a value in graph_0
+        d_val = 1.0 if gid == 0 else None
+        rows.append({"_graph": gid, "_node_type": "T", "E": float(gid), "D": d_val})
+    t_df = pd.DataFrame(rows)
+
+    schema = compute_per_graph_feature_schema(
+        {"T": t_df},
+        min_presence_ratio=0.1,  # 10% threshold
+    )
+
+    t = schema["T"]
+    # D is present in only 1/20 = 5% of graphs → below 10% threshold
+    assert "D" in t["low_presence_columns"], (
+        f"D should be low-presence. presence={t['presence_per_column'].get('D')}, "
+        f"low_presence_columns={t['low_presence_columns']}"
+    )
+    # E is present in all 20 graphs → not flagged
+    assert "E" not in t["low_presence_columns"]

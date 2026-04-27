@@ -57,6 +57,8 @@ class ColumnInfo(BaseModel):
     dtype: str
     missing_count: int
     missing_pct: float
+    presence_pct: float = 0.0
+    low_presence_warning: bool = False
     unique_count: int
     # Populated for heterogeneous graphs (one entry per (type, column)).
     node_type: Optional[str] = None
@@ -78,6 +80,7 @@ class GenericExploreData(BaseModel):
     node_types: list[str] = []
     edge_types: list[str] = []
     canonical_edges: list[list[str]] = []
+    per_graph_feature_schema: Optional[dict] = None
 
 
 # ── Label validation / imputation ──────────────────────────────────────────

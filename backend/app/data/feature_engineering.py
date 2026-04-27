@@ -76,17 +76,96 @@ def _column_entries(
             continue
         series = df[col]
         missing = int(series.isna().sum())
+        missing_pct = round((missing / total * 100) if total else 0.0, 2)
+        presence_pct = round(100.0 - missing_pct, 2)
         entry = {
             "name": col,
             "dtype": detect_column_type(series),
             "missing_count": missing,
-            "missing_pct": round((missing / total * 100) if total else 0.0, 2),
+            "missing_pct": missing_pct,
+            "presence_pct": presence_pct,
+            "low_presence_warning": False,
             "unique_count": int(series.nunique()),
         }
         if type_name is not None:
             entry[f"{source}_type"] = type_name
         out.append(entry)
     return out
+
+
+def compute_per_graph_feature_schema(
+    node_dfs: dict[str, pd.DataFrame],
+    graph_col: str = "_graph",
+    min_presence_ratio: float = 0.1,
+) -> dict[str, dict]:
+    """Compute per-type, per-graph feature schema with presence rates.
+
+    Returns:
+    {
+      "CAP": {
+        "graphs": { "g1": ["A", "B"], "g2": ["A", "C"] },
+        "union": ["A", "B", "C"],
+        "intersection": ["A"],
+        "presence_per_column": { "A": 1.0, "B": 0.5, "C": 0.5 },
+        "low_presence_columns": [],
+      },
+      ...
+    }
+
+    A column is considered "present" in a graph if at least one row for that
+    (type, graph) combination has a non-NaN value.
+    ``low_presence_columns`` lists columns whose graph-level presence ratio is
+    below ``min_presence_ratio``.
+    """
+    skip = NODE_COL_SKIP
+    result: dict[str, dict] = {}
+
+    for node_type, df in node_dfs.items():
+        # Determine feature columns (skip internal/meta columns)
+        feature_cols = [c for c in df.columns if c not in skip]
+
+        # Get unique graph IDs
+        if graph_col in df.columns:
+            graph_ids = df[graph_col].dropna().unique().tolist()
+        else:
+            graph_ids = ["__single__"]
+
+        # Build per-graph column lists: columns with at least one non-NaN row
+        graphs: dict[str, list[str]] = {}
+        for gid in graph_ids:
+            if graph_col in df.columns:
+                g_df = df[df[graph_col] == gid]
+            else:
+                g_df = df
+            present = [c for c in feature_cols if g_df[c].notna().any()]
+            graphs[str(gid)] = present
+
+        # Union and intersection
+        all_sets = [set(cols) for cols in graphs.values()] if graphs else []
+        union_set: list[str] = sorted(set().union(*all_sets)) if all_sets else []
+        intersection_set: list[str] = sorted(set.intersection(*all_sets)) if all_sets else []
+
+        # Presence ratio per column = fraction of graphs where column is present
+        n_graphs = len(graphs)
+        presence_per_column: dict[str, float] = {}
+        for col in union_set:
+            present_count = sum(1 for cols in graphs.values() if col in cols)
+            presence_per_column[col] = round(present_count / n_graphs, 4) if n_graphs else 0.0
+
+        low_presence_columns = [
+            col for col, ratio in presence_per_column.items()
+            if ratio < min_presence_ratio
+        ]
+
+        result[node_type] = {
+            "graphs": graphs,
+            "union": union_set,
+            "intersection": intersection_set,
+            "presence_per_column": presence_per_column,
+            "low_presence_columns": low_presence_columns,
+        }
+
+    return result
 
 
 def compute_generic_explore(
@@ -161,6 +240,12 @@ def compute_generic_explore(
     graph_count, avg_nodes = _graph_stats(nodes_df)
     _, avg_edges = _graph_stats(edges_df)
 
+    # Per-graph feature schema (hetero only)
+    if is_heterogeneous and node_dfs:
+        per_graph_schema = compute_per_graph_feature_schema(node_dfs)
+    else:
+        per_graph_schema = {}
+
     payload = {
         "num_nodes": len(nodes_df),
         "num_edges": len(edges_df),
@@ -176,6 +261,7 @@ def compute_generic_explore(
         "node_types": node_types or [],
         "edge_types": edge_types or [],
         "canonical_edges": [list(ce) for ce in (canonical_edges or [])],
+        "per_graph_feature_schema": per_graph_schema,
     }
     return payload
 
