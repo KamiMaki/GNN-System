@@ -58,7 +58,7 @@ interface GraphPreviewProps {
   height?: number;
 }
 
-export default function GraphPreview({ graphSample, height: heightProp }: GraphPreviewProps) {
+function GraphPreview({ graphSample, height: heightProp }: GraphPreviewProps) {
   const canvasHeight = heightProp ?? 420;
   const { token } = theme.useToken();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -344,3 +344,5 @@ export default function GraphPreview({ graphSample, height: heightProp }: GraphP
     </>
   );
 }
+
+export default React.memo(GraphPreview);
