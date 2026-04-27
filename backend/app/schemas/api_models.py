@@ -81,6 +81,7 @@ class GenericExploreData(BaseModel):
     edge_types: list[str] = []
     canonical_edges: list[list[str]] = []
     per_graph_feature_schema: Optional[dict] = None
+    schema_warnings: Optional[list[str]] = None
 
 
 # ── Label validation / imputation ──────────────────────────────────────────

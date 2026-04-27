@@ -291,6 +291,7 @@ async def _store_excel_dataset(project_id: str, content: bytes, name: str) -> Da
         node_type_features=_node_type_features,
         edge_type_features=_edge_type_features,
     )
+    explore_stats["schema_warnings"] = parsed.get("schema_warnings", []) or []
     # Count unique numeric feature names (per-type entries with same name → one feature).
     _numeric_names = {c["name"] for c in explore_stats["columns"] if c["dtype"] == "numeric"}
     num_features = len(_numeric_names)
@@ -463,9 +464,12 @@ async def get_graph_sample(
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304)
 
-    # SQLite cache hit (only when a specific graph is selected)
-    if graph_name and excel_hash:
-        cached = graph_cache_sqlite.get(dataset_id, graph_name, excel_hash)
+    # SQLite cache hit (only when a specific graph is selected).
+    # Cache key includes limit to avoid returning a 500-row sample for a
+    # later 100-row request (and vice-versa) -- see security-review #1.
+    cache_graph_id = f"{graph_name}|limit={limit}" if graph_name else None
+    if cache_graph_id and excel_hash:
+        cached = graph_cache_sqlite.get(dataset_id, cache_graph_id, excel_hash)
         if cached is not None:
             return Response(
                 content=cached,
@@ -598,8 +602,8 @@ async def get_graph_sample(
     payload_bytes = json.dumps(payload).encode()
 
     # Store in SQLite cache when a specific graph was requested
-    if graph_name and excel_hash:
-        graph_cache_sqlite.put(dataset_id, graph_name, excel_hash, payload_bytes)
+    if cache_graph_id and excel_hash:
+        graph_cache_sqlite.put(dataset_id, cache_graph_id, excel_hash, payload_bytes)
 
     return Response(
         content=payload_bytes,

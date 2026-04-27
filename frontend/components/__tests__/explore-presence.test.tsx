@@ -16,7 +16,7 @@ function PresenceCell({ presencePct, lowPresence }: PresenceCellProps) {
   if (presencePct == null) return <Text type="secondary">—</Text>;
   return (
     <Space size={4}>
-      <Text>{(presencePct * 100).toFixed(2)}%</Text>
+      <Text>{presencePct.toFixed(2)}%</Text>
       {lowPresence && (
         <Tag color="orange" icon={<WarningOutlined />} data-testid="low-presence-tag">
           low presence
@@ -58,13 +58,13 @@ function PerGraphBreakdown({ schema }: { schema: Record<string, PerGraphSchemaEn
 
 describe('Presence rate UI', () => {
   it('renders presence percentage without warning when low_presence_warning is false', () => {
-    render(<PresenceCell presencePct={0.85} lowPresence={false} />);
+    render(<PresenceCell presencePct={85} lowPresence={false} />);
     expect(screen.getByText('85.00%')).toBeInTheDocument();
     expect(screen.queryByTestId('low-presence-tag')).not.toBeInTheDocument();
   });
 
   it('renders low presence warning tag when low_presence_warning is true', () => {
-    render(<PresenceCell presencePct={0.05} lowPresence={true} />);
+    render(<PresenceCell presencePct={5} lowPresence={true} />);
     expect(screen.getByText('5.00%')).toBeInTheDocument();
     expect(screen.getByTestId('low-presence-tag')).toBeInTheDocument();
     expect(screen.getByText('low presence')).toBeInTheDocument();

@@ -286,7 +286,7 @@ export default function ExplorePage() {
                 if (v == null) return <Text type="secondary">—</Text>;
                 return (
                     <Space size={4}>
-                        <Text>{(v * 100).toFixed(2)}%</Text>
+                        <Text>{v.toFixed(2)}%</Text>
                         {record.lowPresence && (
                             <Tag color="orange" icon={<WarningOutlined />} style={{ fontSize: 11 }}>
                                 low presence
