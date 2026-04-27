@@ -362,15 +362,18 @@ def run_training_task(task_id: str) -> None:
             # Unscale the train-side y for metric parity with test (train y is currently scaled).
             if is_regression:
                 train_y = scaler.inverse_np(train_y)
+            val_preds, val_y = _predict_list(model, val_items, task_type, is_hetero, scaler)
             test_preds, test_y = _predict_list(model, test_items, task_type, is_hetero, scaler)
         else:
             train_preds, train_y = _predict_single(model, train_items, task_type, scaler)
             if is_regression:
                 train_y = scaler.inverse_np(train_y)
+            val_preds, val_y = _predict_single(model, val_items, task_type, scaler)
             test_preds, test_y = _predict_single(model, test_items, task_type, scaler)
 
         if is_regression:
             train_metrics = _regression_metrics(train_y, train_preds)
+            val_metrics = _regression_metrics(val_y, val_preds)
             test_metrics = _regression_metrics(test_y, test_preds)
             cm = None
             residual = [
@@ -383,6 +386,7 @@ def run_training_task(task_id: str) -> None:
             ]
         else:
             train_metrics = _classification_metrics(train_y, train_preds)
+            val_metrics = _classification_metrics(val_y, val_preds)
             test_metrics = _classification_metrics(test_y, test_preds)
             labels = sorted(set(test_y.tolist()) | set(test_preds.tolist()))
             cm_arr = sklearn_confusion_matrix(test_y, test_preds, labels=labels)
@@ -392,7 +396,7 @@ def run_training_task(task_id: str) -> None:
         report = {
             "task_type": task_type,
             "train_metrics": train_metrics,
-            "val_metrics": dict(test_metrics),
+            "val_metrics": val_metrics,
             "test_metrics": test_metrics,
             "history": progress_cb.history,
             "confusion_matrix": cm,
