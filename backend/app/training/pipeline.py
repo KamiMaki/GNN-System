@@ -256,6 +256,7 @@ def run_training_task(task_id: str) -> None:
 
         store.update_task(
             task_id, device=device_str, status="PREPROCESSING", progress=5,
+            current_phase="preprocessing",
             current_trial=0, total_trials=n_trials,
         )
 
@@ -286,6 +287,7 @@ def run_training_task(task_id: str) -> None:
 
         store.update_task(
             task_id, progress=15, status="TRAINING",
+            current_phase="hpo",
             current_trial=0, total_trials=n_trials,
         )
 
@@ -300,6 +302,7 @@ def run_training_task(task_id: str) -> None:
 
         store.update_task(
             task_id, progress=50, best_config=best_config,
+            current_phase="final_training",
             current_trial=best_config.get("completed_trials", n_trials),
             total_trials=n_trials,
         )
@@ -357,19 +360,26 @@ def run_training_task(task_id: str) -> None:
             model.load_state_dict(state["state_dict"])
 
         # ── Evaluation ──
+        # Graph-level paths (_prepare_hetero / _prepare_graph_homo) scale BOTH
+        # train and val items, so train_y AND val_y must be inverse-scaled
+        # before metric computation. Forgetting val_y produced absurd val
+        # metrics (R²=-30+, MAPE in the thousands) — see 2026-04-28 fix.
+        # Node-level path (_prepare_node) scales train only; val_items reuses
+        # the unscaled test data, so val_y is already in raw space and must
+        # NOT be inverse-scaled a second time.
         if isinstance(train_items, list):
             train_preds, train_y = _predict_list(model, train_items, task_type, is_hetero, scaler)
-            # Unscale the train-side y for metric parity with test (train y is currently scaled).
-            if is_regression:
-                train_y = scaler.inverse_np(train_y)
             val_preds, val_y = _predict_list(model, val_items, task_type, is_hetero, scaler)
             test_preds, test_y = _predict_list(model, test_items, task_type, is_hetero, scaler)
-        else:
-            train_preds, train_y = _predict_single(model, train_items, task_type, scaler)
             if is_regression:
                 train_y = scaler.inverse_np(train_y)
+                val_y = scaler.inverse_np(val_y)
+        else:
+            train_preds, train_y = _predict_single(model, train_items, task_type, scaler)
             val_preds, val_y = _predict_single(model, val_items, task_type, scaler)
             test_preds, test_y = _predict_single(model, test_items, task_type, scaler)
+            if is_regression:
+                train_y = scaler.inverse_np(train_y)
 
         if is_regression:
             train_metrics = _regression_metrics(train_y, train_preds)
@@ -415,6 +425,7 @@ def run_training_task(task_id: str) -> None:
 
         store.update_task(
             task_id, status="COMPLETED", progress=100,
+            current_phase="completed",
             results={
                 "train_metrics": train_metrics,
                 "test_metrics": test_metrics,
@@ -473,6 +484,7 @@ def run_training_task(task_id: str) -> None:
     except Exception:
         log.exception("Training task %s failed", task_id)
         store.update_task(task_id, status="FAILED", progress=0,
+                          current_phase="failed",
                           error="Training failed. Check server logs for details.")
         tk = store.get_task(task_id) or {}
         if tk.get("project_id"):

@@ -105,10 +105,17 @@ def run_hpo(
 
     def objective(trial: optuna.Trial) -> float:
         model_name = trial.suggest_categorical("model", search_models)
-        hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256])
-        num_layers = trial.suggest_int("num_layers", 2, 5)
-        dropout = trial.suggest_float("dropout", 0.1, 0.5)
-        lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+        # Tightened search ranges (2026-04-28): the original (1e-4, 1e-2) lr
+        # range produced training loss that bounced around; constrained to
+        # 1e-5..1e-4 paired with the bumped MAX_EPOCHS=200 / PATIENCE=30
+        # budget gives stable, monotonically-decreasing val curves on
+        # demo-scale data. Dropout capped at 0.3 (>0.3 starves signal on
+        # small graphs). hidden_dim 256 + num_layers 5 dropped — rarely
+        # selected and increase over-smoothing risk on tiny graphs.
+        hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128])
+        num_layers = trial.suggest_int("num_layers", 2, 4)
+        dropout = trial.suggest_float("dropout", 0.1, 0.3)
+        lr = trial.suggest_float("lr", 1e-5, 1e-4, log=True)
 
         model_kwargs = dict(
             num_features=num_features, num_classes=num_classes,
