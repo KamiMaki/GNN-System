@@ -7,6 +7,7 @@ CSV endpoints have been removed.
 from __future__ import annotations
 
 import io
+import json
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -17,12 +18,13 @@ import numpy as np
 import pandas as pd
 import torch
 from fastapi import (
-    APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile,
+    APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.core import store
 from app.core.config import settings
+from app.data import graph_cache_sqlite
 from app.data.excel_ingestion import parse_excel_file
 from app.data.feature_engineering import (
     analyze_categorical_column,
@@ -223,7 +225,41 @@ async def load_demo_excel(project_id: str, demo_id: str = Query(...)):
 
 # ── Upload Excel ──────────────────────────────────────────────────────────
 
+def _build_graph_index(nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> list[dict]:
+    """Return [{id, node_count, edge_count}, ...] per graph (quick pass)."""
+    if "_graph" not in nodes_df.columns:
+        return [{"id": "default", "node_count": len(nodes_df), "edge_count": len(edges_df)}]
+
+    node_counts = nodes_df.groupby("_graph").size().rename("node_count")
+    if "_graph" in edges_df.columns and not edges_df.empty:
+        edge_counts = edges_df.groupby("_graph").size().rename("edge_count")
+    else:
+        edge_counts = pd.Series(dtype=int, name="edge_count")
+
+    all_graphs = node_counts.index.union(edge_counts.index)
+    result = []
+    for g in all_graphs:
+        result.append({
+            "id": str(g),
+            "node_count": int(node_counts.get(g, 0)),
+            "edge_count": int(edge_counts.get(g, 0)),
+        })
+    return result
+
+
 async def _store_excel_dataset(project_id: str, content: bytes, name: str) -> DatasetSummary:
+    # Compute content hash for ETag / cache invalidation
+    excel_hash = graph_cache_sqlite.content_hash(content)
+
+    # Invalidate SQLite cache if re-upload with different content
+    existing_project = store.get_project(project_id)
+    if existing_project:
+        old_ds_id = existing_project.get("dataset_id")
+        if old_ds_id:
+            old_ds = store.get_dataset(old_ds_id)
+            if old_ds and old_ds.get("excel_hash") != excel_hash:
+                graph_cache_sqlite.invalidate(old_ds_id)
+
     try:
         parsed = parse_excel_file(content, name)
     except ValueError as e:
@@ -291,6 +327,8 @@ async def _store_excel_dataset(project_id: str, content: bytes, name: str) -> Da
         nodes_df_train = nodes_df_test = nodes_df
         edges_df_train = edges_df_test = edges_df
 
+    graph_index = _build_graph_index(nodes_df, edges_df)
+
     ds_record = {
         "dataset_id": dataset_id, "name": name,
         "num_nodes": len(nodes_df), "num_edges": len(edges_df),
@@ -314,6 +352,9 @@ async def _store_excel_dataset(project_id: str, content: bytes, name: str) -> Da
         "schema_spec": schema_payload,
         "label_column": label_column,
         "label_weight": parsed["label_weight"],
+        # Cache / ETag support
+        "excel_hash": excel_hash,
+        "graph_index": graph_index,
     }
     store.put_dataset(dataset_id, ds_record)
 
@@ -402,6 +443,7 @@ async def explore_project_data(project_id: str):
 
 @router.get("/{project_id}/graph-sample")
 async def get_graph_sample(
+    request: Request,
     project_id: str,
     limit: int = Query(default=500, ge=5, le=5000),
     graph_name: Optional[str] = Query(default=None),
@@ -409,10 +451,28 @@ async def get_graph_sample(
     """Return a sample of the project's graph data for preview.
 
     Returns node_type / edge_type for every item so the frontend can colour
-    heterogeneous graphs.
+    heterogeneous graphs. Supports ETag / 304 and SQLite caching per graph.
     """
     project = _project_or_404(project_id)
     ds = _dataset_for_project(project)
+    dataset_id = ds["dataset_id"]
+    excel_hash = ds.get("excel_hash", "")
+
+    # ETag: encode dataset content + graph selection + limit
+    etag = f'"{excel_hash}-{graph_name or "all"}-{limit}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304)
+
+    # SQLite cache hit (only when a specific graph is selected)
+    if graph_name and excel_hash:
+        cached = graph_cache_sqlite.get(dataset_id, graph_name, excel_hash)
+        if cached is not None:
+            return Response(
+                content=cached,
+                media_type="application/json",
+                headers={"ETag": etag},
+            )
+
     nodes_df = ds["nodes_df"]
     edges_df = ds["edges_df"]
     graph_names = sorted(nodes_df["_graph"].dropna().unique().tolist()) \
@@ -428,13 +488,17 @@ async def get_graph_sample(
     sample_size = min(limit, len(nodes_df))
     all_node_ids = set(nodes_df["node_id"].values) if not nodes_df.empty else set()
 
+    # Build adjacency using vectorized pandas instead of iterrows
     adj: dict = defaultdict(set)
     if not edges_df.empty and "src_id" in edges_df.columns:
-        for _, row in edges_df.iterrows():
-            s, d = row["src_id"], row["dst_id"]
-            if s in all_node_ids and d in all_node_ids:
-                adj[s].add(d)
-                adj[d].add(s)
+        valid_mask = (
+            edges_df["src_id"].isin(all_node_ids) & edges_df["dst_id"].isin(all_node_ids)
+        )
+        valid_edges = edges_df[valid_mask][["src_id", "dst_id"]]
+        for rec in valid_edges.to_dict(orient="records"):
+            s, d = rec["src_id"], rec["dst_id"]
+            adj[s].add(d)
+            adj[d].add(s)
 
     if not nodes_df.empty:
         seed = nodes_df.sample(n=1, random_state=42)["node_id"].values[0]
@@ -497,26 +561,28 @@ async def get_graph_sample(
             "attributes": attrs,
         })
 
+    # Vectorized edge attribute extraction
     edge_attr_cols = [c for c in edges_df.columns if c not in {"src_id", "dst_id", "id", "index"}]
     edges_out = []
-    for _, row in sampled_edges.iterrows():
+    for rec in sampled_edges.to_dict(orient="records"):
         attrs = {}
         for c in edge_attr_cols:
-            v = row[c]
-            if pd.isna(v):
+            v = rec.get(c)
+            if v is None or (isinstance(v, float) and pd.isna(v)):
                 attrs[c] = None
             elif isinstance(v, (int, float, np.integer, np.floating)):
                 attrs[c] = round(float(v), 4) if isinstance(v, (float, np.floating)) else int(v)
             else:
                 attrs[c] = str(v)
+        edge_type_val = rec.get("_edge_type")
         edges_out.append({
-            "source": _norm_id(row["src_id"]),
-            "target": _norm_id(row["dst_id"]),
-            "edge_type": str(row["_edge_type"]) if "_edge_type" in row and not pd.isna(row["_edge_type"]) else None,
+            "source": _norm_id(rec["src_id"]),
+            "target": _norm_id(rec["dst_id"]),
+            "edge_type": str(edge_type_val) if edge_type_val is not None and not (isinstance(edge_type_val, float) and pd.isna(edge_type_val)) else None,
             "attributes": attrs,
         })
 
-    return {
+    payload = {
         "nodes": nodes_out, "edges": edges_out,
         "num_nodes_total": len(nodes_df),
         "num_edges_total": len(edges_df),
@@ -526,7 +592,20 @@ async def get_graph_sample(
         "is_heterogeneous": ds.get("is_heterogeneous", False),
         "node_types": ds.get("node_types", []),
         "edge_types": ds.get("edge_types", []),
+        "graph_index": ds.get("graph_index", []),
     }
+
+    payload_bytes = json.dumps(payload).encode()
+
+    # Store in SQLite cache when a specific graph was requested
+    if graph_name and excel_hash:
+        graph_cache_sqlite.put(dataset_id, graph_name, excel_hash, payload_bytes)
+
+    return Response(
+        content=payload_bytes,
+        media_type="application/json",
+        headers={"ETag": etag},
+    )
 
 
 @router.get("/{project_id}/columns/{column_name}")
