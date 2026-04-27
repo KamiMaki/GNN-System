@@ -134,7 +134,7 @@ def _prepare_hetero(dataset: dict, generator: torch.Generator):
         "label_column": dataset["label_column"],
         "canonical_edges": dataset["canonical_edges"],
     }
-    data_list, _s, _f, _ce = parsed_excel_to_hetero_list(parsed)
+    data_list, _s, _f, _ce, _excl = parsed_excel_to_hetero_list(parsed)
     metadata = data_list[0].metadata()
     num_classes = 1 if dataset["task_type"].endswith("regression") else 2
     train, val, test = _split_three(data_list, generator)
