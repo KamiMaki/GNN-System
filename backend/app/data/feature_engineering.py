@@ -40,7 +40,7 @@ def _graph_stats(df: pd.DataFrame) -> tuple[int, float]:
     return 1, float(len(df))
 
 
-NODE_COL_SKIP = {"_graph", "_node_type", "Type", "Graph_ID", "Node"}
+NODE_COL_SKIP = {"_graph", "_node_type", "Type", "Graph_ID", "Node", "node_id"}
 EDGE_COL_SKIP = {"_graph", "_edge_type", "src_type", "dst_type",
                  "Edge_Type", "Type", "src_id", "dst_id",
                  "Graph_ID", "Source_Node_ID", "Target_Node_ID",
@@ -54,6 +54,7 @@ def _column_entries(
     type_name: Optional[str] = None,
     source: str = "node",
     declared_cols: Optional[set[str]] = None,
+    graph_col: str = "_graph",
 ) -> list[dict]:
     """Emit a list of column-stat dicts from ``df``.
 
@@ -66,24 +67,66 @@ def _column_entries(
     are in that set are included. This prevents cross-type padding columns
     (e.g. ``f_pin`` present in cell rows as all-NaN) from being reported as
     100 % missing for the wrong type.
+
+    Per-graph aware missing semantics (2026-04-28):
+        When ``graph_col`` is in ``df``, a column is considered "in scope" only
+        for the graphs that actually use it (i.e. have at least one non-NaN
+        value for that column). Rows in graphs that legitimately don't carry
+        that column are excluded from both numerator and denominator. This
+        mirrors the user-facing rule "if this type has A&B or A&C, an A&C
+        row should NOT report B as missing" — only true value gaps inside an
+        in-scope graph are counted.
     """
-    total = len(df)
     out = []
+    has_graph = graph_col in df.columns and len(df) > 0
+    if has_graph:
+        graph_ids = df[graph_col].dropna().unique().tolist()
+
     for col in df.columns:
         if col in skip:
             continue
         if declared_cols is not None and col not in declared_cols:
             continue
         series = df[col]
-        missing = int(series.isna().sum())
-        missing_pct = round((missing / total * 100) if total else 0.0, 2)
-        presence_pct = round(100.0 - missing_pct, 2)
+
+        if has_graph:
+            # Restrict denominator to rows in graphs that USE this column.
+            using_graphs = [
+                gid for gid in graph_ids
+                if df.loc[df[graph_col] == gid, col].notna().any()
+            ]
+            in_scope_mask = df[graph_col].isin(using_graphs)
+            in_scope = df.loc[in_scope_mask, col]
+            total_in_scope = len(in_scope)
+            missing_in_scope = int(in_scope.isna().sum())
+            n_total_graphs = len(graph_ids)
+            n_using_graphs = len(using_graphs)
+            graph_presence_pct = round(
+                (n_using_graphs / n_total_graphs * 100) if n_total_graphs else 0.0, 2
+            )
+        else:
+            in_scope = series
+            total_in_scope = len(df)
+            missing_in_scope = int(series.isna().sum())
+            graph_presence_pct = 100.0
+
+        if has_graph and total_in_scope == 0:
+            # No graph uses this column at all — entirely missing, not an
+            # in-scope NaN: surface as 0% so the UI can flag it clearly.
+            missing_pct = 100.0
+            presence_pct = 0.0
+        else:
+            missing_pct = round(
+                (missing_in_scope / total_in_scope * 100) if total_in_scope else 0.0, 2
+            )
+            presence_pct = round(100.0 - missing_pct, 2)
         entry = {
             "name": col,
             "dtype": detect_column_type(series),
-            "missing_count": missing,
+            "missing_count": missing_in_scope,
             "missing_pct": missing_pct,
             "presence_pct": presence_pct,
+            "graph_presence_pct": graph_presence_pct,
             "low_presence_warning": False,
             "unique_count": int(series.nunique()),
         }
