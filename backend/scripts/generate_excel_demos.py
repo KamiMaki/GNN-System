@@ -1,16 +1,16 @@
-"""Generate demo .xlsx files matching the graph_data_template (V3 — 2026-04-26).
+"""Generate demo .xlsx files matching the graph_data_template (V3 — 2026-04-28).
 
 Produces files under backend/demo_data/:
-    * demo_multigraph_homo.v2.xlsx        — 30 graphs, homogeneous, graph regression
-    * demo_multigraph_homo_large.v2.xlsx  — 100 graphs, homogeneous, graph regression
-    * demo_multigraph_hetero.v2.xlsx      — 30 graphs, 3 node types (cell/pin/net),
-                                            2 edge types (cell_pin/pin_net),
-                                            graph regression (total_wirelength)
-
-Hetero schema:
-    Node sheet has a ``Type`` column with values "cell", "pin", "net".
-    Edge sheet has a ``Type`` column with values "cell_pin", "pin_net".
-    Parameter sheet declares features per type and the graph-level Y target.
+    * demo_multigraph_homo.v2.xlsx          — 30 graphs, homogeneous, graph regression
+    * demo_multigraph_homo_large.v2.xlsx    — 100 graphs, homogeneous, graph regression
+    * demo_multigraph_hetero.v2.xlsx        — 30 graphs, 3 node types (cell/pin/net),
+                                              2 edge types (cell_pin/pin_net),
+                                              graph regression (total_wirelength)
+    * demo_hetero_multifeature.v3.xlsx      — 30 graphs, string Graph_IDs (G001…G030),
+                                              2 node types (CAP/RES), per-graph
+                                              variable feature groups for CAP
+                                              (X_1+X_2, X_1+X_3, or X_2+X_3),
+                                              graph regression (target_y, predictable)
 
 Run with:
     cd backend && python scripts/generate_excel_demos.py
@@ -440,10 +440,200 @@ def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
     }
 
 
+# ── Heterogeneous demo v3 — string Graph_IDs + multi feature groups ──────
+# Graph_ID is a string ("G001" … "G030") to exercise non-integer Graph_IDs
+# end-to-end. Two node types (CAP, RES). For CAP, three different feature
+# groups assigned across graphs:
+#     Group A (10 graphs): present X_1, X_2 (NaN for X_3)
+#     Group B (10 graphs): present X_1, X_3 (NaN for X_2)
+#     Group C (10 graphs): present X_2, X_3 (NaN for X_1)
+# RES type uses a fixed feature set (R_1, R_2) for all graphs.
+#
+# Y target (graph_regression, target_y) is a deterministic linear function
+# of the present features so the model can actually learn it:
+#     target_y = 2.0 * mean(X_1_after_fillna_0)
+#              + 1.5 * mean(X_2_after_fillna_0)
+#              + 1.0 * mean(X_3_after_fillna_0)
+#              + 0.8 * mean(R_1)
+#              + 0.4 * mean(R_2)
+#              + small Gaussian noise
+# Because NaN columns are fillna(0.0) before scaling, absent features
+# contribute 0 to the sum — so the same linear weights work across all
+# three CAP feature groups. Tight ranges + small noise keep training loss
+# stable and final metrics in a sane band (R^2 well above 0).
+
+def make_hetero_str_gid(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
+    rng = random.Random(SEED)
+
+    parameter = pd.DataFrame([
+        # CAP node features (three columns; only two are present per graph).
+        {"XY": "X", "Level": "Node", "Type": "CAP", "Parameter": "X_1", "Weight": None},
+        {"XY": "X", "Level": "Node", "Type": "CAP", "Parameter": "X_2", "Weight": None},
+        {"XY": "X", "Level": "Node", "Type": "CAP", "Parameter": "X_3", "Weight": None},
+        # RES node features (consistent across graphs).
+        {"XY": "X", "Level": "Node", "Type": "RES", "Parameter": "R_1", "Weight": None},
+        {"XY": "X", "Level": "Node", "Type": "RES", "Parameter": "R_2", "Weight": None},
+        # cap_res edge feature.
+        {"XY": "X", "Level": "Edge", "Type": "cap_res", "Parameter": "weight_cr", "Weight": None},
+        # Graph-level Y.
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "target_y", "Weight": 1.0},
+    ])
+
+    feature_groups = ["A", "B", "C"]   # cycles A,B,C,A,B,C,...
+
+    node_rows: list[dict] = []
+    edge_rows: list[dict] = []
+    graph_rows: list[dict] = []
+
+    global_node_id = 0
+
+    for i in range(n_graphs):
+        gid = f"G{i + 1:03d}"
+        group = feature_groups[i % 3]
+
+        n_caps = rng.randint(6, 12)
+        n_res = rng.randint(4, 8)
+
+        cap_ids = list(range(global_node_id, global_node_id + n_caps))
+        global_node_id += n_caps
+        res_ids = list(range(global_node_id, global_node_id + n_res))
+        global_node_id += n_res
+
+        # Generate CAP features in tight ranges (low variance → easier to learn).
+        x1_vals: list[float] = []
+        x2_vals: list[float] = []
+        x3_vals: list[float] = []
+        for cid in cap_ids:
+            x1 = round(rng.uniform(0.5, 1.5), 4)
+            x2 = round(rng.uniform(0.5, 1.5), 4)
+            x3 = round(rng.uniform(0.5, 1.5), 4)
+            # Drop one column to NaN based on group so the same node type CAP
+            # carries different feature subsets across graphs.
+            if group == "A":      # present X_1, X_2 — NaN for X_3
+                row_x1, row_x2, row_x3 = x1, x2, None
+            elif group == "B":    # present X_1, X_3 — NaN for X_2
+                row_x1, row_x2, row_x3 = x1, None, x3
+            else:                 # present X_2, X_3 — NaN for X_1
+                row_x1, row_x2, row_x3 = None, x2, x3
+            node_rows.append({
+                "Graph_ID": gid, "Node": cid, "Type": "CAP",
+                "X_1": row_x1, "X_2": row_x2, "X_3": row_x3,
+                # NaN for the RES-only columns
+                "R_1": None, "R_2": None,
+            })
+            x1_vals.append(row_x1 if row_x1 is not None else 0.0)
+            x2_vals.append(row_x2 if row_x2 is not None else 0.0)
+            x3_vals.append(row_x3 if row_x3 is not None else 0.0)
+
+        r1_vals: list[float] = []
+        r2_vals: list[float] = []
+        for rid in res_ids:
+            r1 = round(rng.uniform(0.5, 1.5), 4)
+            r2 = round(rng.uniform(0.5, 1.5), 4)
+            r1_vals.append(r1)
+            r2_vals.append(r2)
+            node_rows.append({
+                "Graph_ID": gid, "Node": rid, "Type": "RES",
+                "X_1": None, "X_2": None, "X_3": None,
+                "R_1": r1, "R_2": r2,
+            })
+
+        # cap_res edges: each CAP connects to one or two RES (deterministic).
+        g_edges: list[dict] = []
+        for cid in cap_ids:
+            partners = rng.sample(res_ids, k=min(rng.randint(1, 2), len(res_ids)))
+            for rid in partners:
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": cid, "Target_Node_ID": rid,
+                    "Type": "cap_res",
+                    "weight_cr": round(rng.uniform(0.1, 1.0), 3),
+                })
+
+        # Coverage pass: every RES must appear in at least one edge.
+        covered = {e["Source_Node_ID"] for e in g_edges} | {e["Target_Node_ID"] for e in g_edges}
+        for rid in res_ids:
+            if rid not in covered:
+                cid = rng.choice(cap_ids)
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": cid, "Target_Node_ID": rid,
+                    "Type": "cap_res",
+                    "weight_cr": round(rng.uniform(0.1, 1.0), 3),
+                })
+
+        # Connectivity pass: bridge disconnected components via cap_res edges.
+        all_node_ids = cap_ids + res_ids
+        node_type_map = {n: "CAP" for n in cap_ids}
+        node_type_map.update({n: "RES" for n in res_ids})
+        uf = _UnionFind(all_node_ids)
+        for e in g_edges:
+            uf.union(e["Source_Node_ID"], e["Target_Node_ID"])
+        comps = uf.components()
+        while len(comps) > 1:
+            roots = list(comps.keys())
+            largest = max(roots, key=lambda r: len(comps[r]))
+            anchor_cap = next(
+                (n for n in comps[largest] if node_type_map[n] == "CAP"),
+                None,
+            )
+            other_root = next(r for r in roots if r != largest)
+            bridge_res = next(
+                (n for n in comps[other_root] if node_type_map[n] == "RES"),
+                None,
+            )
+            if anchor_cap is not None and bridge_res is not None:
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": anchor_cap, "Target_Node_ID": bridge_res,
+                    "Type": "cap_res",
+                    "weight_cr": round(rng.uniform(0.1, 1.0), 3),
+                })
+                uf.union(anchor_cap, bridge_res)
+            else:
+                # Fallback: connect any pair to make progress (shouldn't happen).
+                a = rng.choice(comps[largest])
+                b = rng.choice(comps[other_root])
+                g_edges.append({
+                    "Graph_ID": gid,
+                    "Source_Node_ID": a, "Target_Node_ID": b,
+                    "Type": "cap_res",
+                    "weight_cr": round(rng.uniform(0.1, 1.0), 3),
+                })
+                uf.union(a, b)
+            comps = uf.components()
+
+        edge_rows.extend(g_edges)
+
+        # Deterministic Y: linear in present feature pool means.
+        mean_x1 = sum(x1_vals) / len(x1_vals)
+        mean_x2 = sum(x2_vals) / len(x2_vals)
+        mean_x3 = sum(x3_vals) / len(x3_vals)
+        mean_r1 = sum(r1_vals) / len(r1_vals)
+        mean_r2 = sum(r2_vals) / len(r2_vals)
+        target = (
+            2.0 * mean_x1
+            + 1.5 * mean_x2
+            + 1.0 * mean_x3
+            + 0.8 * mean_r1
+            + 0.4 * mean_r2
+            + rng.gauss(0.0, 0.05)   # tiny Gaussian noise (std=0.05)
+        )
+        graph_rows.append({"Graph_ID": gid, "target_y": round(target, 4)})
+
+    return {
+        "Parameter": parameter,
+        "Node": pd.DataFrame(node_rows),
+        "Edge": pd.DataFrame(edge_rows),
+        "Graph": pd.DataFrame(graph_rows),
+    }
+
+
 def main() -> None:
     homo_v2 = OUT / "demo_multigraph_homo.v2.xlsx"
     homo_large_v2 = OUT / "demo_multigraph_homo_large.v2.xlsx"
     hetero_v2 = OUT / "demo_multigraph_hetero.v2.xlsx"
+    hetero_v3 = OUT / "demo_hetero_multifeature.v3.xlsx"
 
     _write(homo_v2, make_homo(30))
     _write(homo_large_v2, make_homo(100))
@@ -456,6 +646,15 @@ def main() -> None:
         fallback = OUT / "demo_multigraph_hetero.v2.new.xlsx"
         _write(fallback, make_hetero(30))
         print(f"Skipped {hetero_v2} (open in Excel?); wrote {fallback} instead")
+
+    # Hetero v3 (string Graph_IDs + multi-feature groups).
+    try:
+        _write(hetero_v3, make_hetero_str_gid(30))
+        print(f"Wrote {hetero_v3}")
+    except PermissionError:
+        fallback = OUT / "demo_hetero_multifeature.v3.new.xlsx"
+        _write(fallback, make_hetero_str_gid(30))
+        print(f"Skipped {hetero_v3} (open in Excel?); wrote {fallback} instead")
 
     # Also refresh the unversioned homo alias (best-effort; may be locked by Excel).
     try:
