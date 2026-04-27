@@ -231,7 +231,7 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     # ── Validate in-sheet types against Parameter sheet declarations ──
     node_in_sheet_types = list(node_dfs.keys()) if node_is_hetero else []
     edge_in_sheet_types = list(edge_dfs.keys()) if edge_is_hetero else []
-    validate_hetero_consistency(spec, {
+    schema_warnings = validate_hetero_consistency(spec, {
         "Node": node_in_sheet_types,
         "Edge": edge_in_sheet_types,
     })
@@ -336,4 +336,5 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
         "label_column": label_column,
         "label_weight": label_weight,
         "name": dataset_name or "excel-upload",
+        "schema_warnings": schema_warnings,
     }

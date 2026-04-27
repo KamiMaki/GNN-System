@@ -18,6 +18,7 @@ Scope:
 """
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
@@ -105,50 +106,52 @@ class ExcelGraphSpec:
 def validate_hetero_consistency(
     spec: "ExcelGraphSpec",
     type_columns: dict[str, list[str]],
-) -> None:
+) -> list[str]:
     """Validate that in-sheet Type values match the Parameter-sheet declared types.
 
     ``type_columns`` maps level name to the list of distinct Type values that
     actually appear in the corresponding data sheet's ``Type`` column (empty
     list when the column is absent or the level has no data sheet).
 
+    Returns a list of warning strings (never raises). Callers should log or
+    attach warnings to the dataset record.
+
     Rules:
     - If a data sheet has NO ``Type`` column, it is treated as homogeneous and
       the Parameter sheet must declare at most one Type for that level (or the
       declared Type is just used as a label without splitting).
     - If a data sheet HAS a ``Type`` column, every value that appears in it
-      must have been declared in the Parameter sheet for that level, and vice-
-      versa.  Missing declarations in either direction are reported clearly.
+      is checked against Parameter-sheet declarations. Mismatches produce
+      warnings (with fuzzy-match typo hints) instead of raising ValueError.
     """
+    warnings: list[str] = []
+
     for level in VALID_LEVELS:
-        declared = set(spec.types_for_level(level))
+        declared = spec.types_for_level(level)
+        declared_set = set(declared)
         in_sheet = set(type_columns.get(level, []))
 
         if not in_sheet:
             # No Type column in data sheet — homogeneous path, nothing to validate.
             continue
 
-        extra_in_sheet = in_sheet - declared
-        extra_declared = declared - in_sheet
+        extra_declared = declared_set - in_sheet
+        observed_list = sorted(in_sheet)
 
-        errors: list[str] = []
-        if extra_in_sheet:
-            errors.append(
-                f"Type values in '{level}' data sheet not declared in Parameter sheet: "
-                f"{sorted(extra_in_sheet)}."
-            )
-        if extra_declared:
-            errors.append(
-                f"Type values declared in Parameter sheet for Level={level} not found "
-                f"in data sheet: {sorted(extra_declared)}."
-            )
-        if errors:
-            raise ValueError(
-                f"Heterogeneous type mismatch for Level={level}. "
-                + " ".join(errors)
-                + " Ensure every Type value in the data sheet has a matching row in "
-                "the Parameter sheet, and vice versa."
-            )
+        for decl_type in sorted(extra_declared):
+            matches = difflib.get_close_matches(decl_type, observed_list, n=1, cutoff=0.7)
+            if matches:
+                warnings.append(
+                    f"Type '{decl_type}' in Parameter sheet (Level={level}) may be a "
+                    f"typo for '{matches[0]}'"
+                )
+            else:
+                warnings.append(
+                    f"Type '{decl_type}' declared in Parameter sheet (Level={level}) "
+                    f"but not present in Data sheet"
+                )
+
+    return warnings
 
 
 def parse_parameter_sheet(df: pd.DataFrame) -> ExcelGraphSpec:
@@ -195,7 +198,7 @@ def parse_parameter_sheet(df: pd.DataFrame) -> ExcelGraphSpec:
                 f"got {level_raw!r}."
             )
         if not type_:
-            raise ValueError(f"Parameter sheet row {idx + 2}: Type is required.")
+            type_ = "default"
         if not parameter:
             raise ValueError(f"Parameter sheet row {idx + 2}: Parameter name is required.")
 

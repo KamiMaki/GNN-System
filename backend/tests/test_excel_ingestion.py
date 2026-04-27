@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from app.data.excel_ingestion import parse_excel_file
-from app.data.excel_spec import parse_parameter_sheet
+from app.data.excel_spec import parse_parameter_sheet, validate_hetero_consistency
 
 
 def _build_workbook(sheets: dict[str, pd.DataFrame]) -> bytes:
@@ -434,3 +434,80 @@ def test_canonical_edges_only_from_observed_triples():
     triples = set(map(tuple, result["canonical_edges"]))
     assert triples == {("cell", "cell_pin", "pin"), ("pin", "pin_net", "net")}, \
         f"Expected only observed triples, got {triples}"
+
+
+# ── Step 1 new tests (sheet optionality + type fallback + warnings) ───────────
+
+
+def test_type_empty_fallback_default():
+    """Parameter sheet row with empty Type → type_ becomes 'default', no raise."""
+    df = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": None, "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Node", "Type": None, "Parameter": "label"},
+    ])
+    spec = parse_parameter_sheet(df)
+    assert all(e.type_ == "default" for e in spec.entries)
+    assert len(spec.entries) == 2
+
+
+def test_validate_consistency_returns_warnings_not_raises():
+    """Declared type not in data sheet → returns list with 1 warning, does not raise."""
+    df = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "x"},
+        {"XY": "X", "Level": "Node", "Type": "ghost", "Parameter": "y"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "z"},
+    ])
+    spec = parse_parameter_sheet(df)
+    # Only "cell" is observed in data sheet; "ghost" is declared but absent
+    warnings = validate_hetero_consistency(spec, {"Node": ["cell"]})
+    assert isinstance(warnings, list)
+    assert len(warnings) == 1
+    assert "ghost" in warnings[0]
+
+
+def test_typo_fuzzy_match_within_distance():
+    """Declared 'CAPP', observed 'CAP' → warning contains 'may be a typo for'."""
+    df = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "CAPP", "Parameter": "f"},
+        {"XY": "Y", "Level": "Node", "Type": "CAPP", "Parameter": "label"},
+    ])
+    spec = parse_parameter_sheet(df)
+    warnings = validate_hetero_consistency(spec, {"Node": ["CAP"]})
+    assert any("may be a typo for" in w for w in warnings), \
+        f"Expected typo hint in warnings, got: {warnings}"
+
+
+def test_no_edge_sheet_passes():
+    """Workbook with only Node + Parameter sheet (no Edge) → parse succeeds."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "label"},
+    ])
+    nodes = pd.DataFrame({
+        "Node": [0, 1, 2],
+        "X_1": [0.1, 0.2, 0.3],
+        "label": [0, 1, 0],
+    })
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes})
+    result = parse_excel_file(wb)
+    assert result["task_type"] == "node_classification"
+    assert result["edge_dfs"] == {}
+
+
+def test_no_graph_sheet_node_task():
+    """No Graph sheet with node-level Y config → parse succeeds (graph_df is None)."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "label"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 2, 2],
+        "Node": [0, 1, 0, 1],
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+        "label": [0, 1, 1, 0],
+    })
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes})
+    result = parse_excel_file(wb)
+    assert result["task_type"] == "node_classification"
+    assert result["graph_df"] is None
+    assert result["schema_warnings"] == []
