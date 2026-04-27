@@ -193,11 +193,20 @@ export interface LabelValidationResult {
   is_continuous?: boolean;
 }
 
+export type TaskPhase =
+  | 'queued'
+  | 'preprocessing'
+  | 'hpo'
+  | 'final_training'
+  | 'completed'
+  | 'failed';
+
 export interface TaskStatus {
   task_id: string;
   project_id?: string;
   status: 'QUEUED' | 'PREPROCESSING' | 'TRAINING' | 'COMPLETED' | 'FAILED';
   progress: number;
+  current_phase?: TaskPhase;
   current_trial?: number;
   total_trials?: number;
   device?: string;

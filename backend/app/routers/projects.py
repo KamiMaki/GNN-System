@@ -90,6 +90,7 @@ def _task_to_status(task: dict, project_id: str) -> TaskStatus:
     return TaskStatus(
         task_id=task["task_id"], project_id=project_id, status=task["status"],
         progress=task.get("progress", 0),
+        current_phase=task.get("current_phase"),
         current_trial=task.get("current_trial"),
         total_trials=task.get("total_trials"),
         device=task.get("device"),
@@ -168,6 +169,19 @@ DEMO_EXCELS = [
         "filename": "demo_multigraph_hetero.v2.xlsx",
         "is_heterogeneous": True,
         "tags": ["multi-graph", "heterogeneous", "graph-regression"],
+    },
+    {
+        "id": "hetero_multifeature_str",
+        "name": "Hetero Multi-Feature (string Graph_ID)",
+        "description": (
+            "30 graphs, string Graph_IDs (G001..G030), 2 node types (CAP/RES). "
+            "CAP nodes carry per-graph variable feature subsets "
+            "(X_1+X_2, X_1+X_3, X_2+X_3); target_y is a deterministic "
+            "linear function so loss is stable and metrics are sane."
+        ),
+        "filename": "demo_hetero_multifeature.v3.xlsx",
+        "is_heterogeneous": True,
+        "tags": ["multi-graph", "heterogeneous", "graph-regression", "string-graph-id", "multi-feature"],
     },
 ]
 

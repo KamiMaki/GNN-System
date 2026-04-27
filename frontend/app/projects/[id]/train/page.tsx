@@ -371,9 +371,24 @@ export default function TrainPage() {
                         {taskStatus && (
                             <Card title="Training Progress" size="small" className="stat-card">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                                    <Tag color={isCompleted ? 'green' : isFailed ? 'red' : 'processing'}>
-                                        {taskStatus.status}
-                                    </Tag>
+                                    <Space size={4}>
+                                        <Tag color={isCompleted ? 'green' : isFailed ? 'red' : 'processing'}>
+                                            {taskStatus.status}
+                                        </Tag>
+                                        {taskStatus.current_phase && !isCompleted && !isFailed && (
+                                            <Tag color={
+                                                taskStatus.current_phase === 'preprocessing' ? 'cyan' :
+                                                taskStatus.current_phase === 'hpo' ? 'blue' :
+                                                taskStatus.current_phase === 'final_training' ? 'geekblue' :
+                                                'default'
+                                            }>
+                                                {taskStatus.current_phase === 'preprocessing' ? 'Phase 1/3 · Preprocessing' :
+                                                 taskStatus.current_phase === 'hpo' ? 'Phase 2/3 · HPO Search' :
+                                                 taskStatus.current_phase === 'final_training' ? 'Phase 3/3 · Final Training' :
+                                                 taskStatus.current_phase}
+                                            </Tag>
+                                        )}
+                                    </Space>
                                     <Text strong style={{ fontSize: 18, color: token.colorPrimary }}>
                                         {taskStatus.progress}%
                                     </Text>
