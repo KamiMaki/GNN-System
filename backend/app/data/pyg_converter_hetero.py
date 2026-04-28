@@ -101,7 +101,7 @@ def _build_single_hetero(
     for nt, df in node_dfs.items():
         sub = df[df["_graph"] == graph_id] if "_graph" in df.columns else df
         sub = sub.reset_index(drop=True)
-        id_map = {int(v): i for i, v in enumerate(sub["node_id"].tolist())}
+        id_map = {str(v): i for i, v in enumerate(sub["node_id"].tolist())}
         id_maps[nt] = id_map
 
         cols = feature_cols[nt]
@@ -131,8 +131,8 @@ def _build_single_hetero(
         src_idx = []
         dst_idx = []
         for _, row in sub.iterrows():
-            s = int(row["src_id"])
-            d = int(row["dst_id"])
+            s = str(row["src_id"])
+            d = str(row["dst_id"])
             if s in id_maps[src_t] and d in id_maps[dst_t]:
                 src_idx.append(id_maps[src_t][s])
                 dst_idx.append(id_maps[dst_t][d])

@@ -115,6 +115,7 @@ def _normalise_node_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
     node_col = _require(out, NODE_ID_CANDIDATES, sheet_name, "node id")
     if node_col != "node_id":
         out = out.rename(columns={node_col: "node_id"})
+    out["node_id"] = out["node_id"].astype(str)
     g_col = _pick(out, GRAPH_ID_CANDIDATES)
     if g_col and g_col != "_graph":
         out = out.rename(columns={g_col: "_graph"})
@@ -132,6 +133,8 @@ def _normalise_edge_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
         renames[dst_col] = "dst_id"
     if renames:
         out = out.rename(columns=renames)
+    out["src_id"] = out["src_id"].astype(str)
+    out["dst_id"] = out["dst_id"].astype(str)
 
     g_col = _pick(out, GRAPH_ID_CANDIDATES)
     if g_col and g_col != "_graph":

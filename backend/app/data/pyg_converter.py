@@ -57,7 +57,7 @@ def dataframes_to_pyg_dynamic(
     exclude = set(_NODE_EXCLUDE) | {label_column}
     x_vals, scaler, feature_names = _numeric_feature_matrix(nodes_df, exclude, scaler, fit_scaler)
 
-    id_to_idx = {int(v): i for i, v in enumerate(nodes_df["node_id"].tolist())}
+    id_to_idx = {str(v): i for i, v in enumerate(nodes_df["node_id"].tolist())}
 
     # Labels
     is_regression = task_type.endswith("regression")
@@ -78,10 +78,9 @@ def dataframes_to_pyg_dynamic(
     # Edges
     src_idx, dst_idx = [], []
     for s, d in zip(edges_df.get("src_id", []), edges_df.get("dst_id", [])):
-        try:
-            si, di = int(s), int(d)
-        except (TypeError, ValueError):
+        if s is None or d is None:
             continue
+        si, di = str(s), str(d)
         if si in id_to_idx and di in id_to_idx:
             src_idx.append(id_to_idx[si])
             dst_idx.append(id_to_idx[di])
@@ -155,7 +154,7 @@ def dataframes_to_graph_list(
         node_mask = nodes_df["_graph"] == gid
         sub_nodes = nodes_df[node_mask].reset_index(drop=True)
         sub_x = x_all[node_mask.to_numpy()]
-        id_map = {int(v): i for i, v in enumerate(sub_nodes["node_id"].tolist())}
+        id_map = {str(v): i for i, v in enumerate(sub_nodes["node_id"].tolist())}
 
         # Edges in this graph
         if not edges_df.empty and "_graph" in edges_df.columns:
@@ -164,10 +163,9 @@ def dataframes_to_graph_list(
             sub_edges = edges_df
         src, dst = [], []
         for s, d in zip(sub_edges.get("src_id", []), sub_edges.get("dst_id", [])):
-            try:
-                si, di = int(s), int(d)
-            except (TypeError, ValueError):
+            if s is None or d is None:
                 continue
+            si, di = str(s), str(d)
             if si in id_map and di in id_map:
                 src.append(id_map[si])
                 dst.append(id_map[di])
