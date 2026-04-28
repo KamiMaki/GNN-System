@@ -581,7 +581,7 @@ async def get_graph_sample(
                 attrs[c] = str(v)
         nodes_out.append({
             "id": _norm_id(row["node_id"]),
-            "label": f"node_{_norm_id(row['node_id'])}",
+            "label": _norm_id(row["node_id"]),
             "node_type": str(row["_node_type"]) if "_node_type" in row and not pd.isna(row["_node_type"]) else None,
             "attributes": attrs,
         })
