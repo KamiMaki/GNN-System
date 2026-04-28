@@ -1,23 +1,26 @@
 """Excel (.xlsx) graph-data ingestion.
 
-Reads the multi-sheet template (Parameter + Node/Edge/Graph data sheets),
-derives the user's intended task from Y rows in the Parameter sheet, and emits
-DataFrames ready for the PyG converter.
+Reads the multi-sheet template (Node + Edge + Graph data sheets) and emits
+DataFrames ready for the PyG converter. The task type and label column are
+inferred directly from the data sheets — no Parameter sheet is required.
 
-Schema (V3 — 2026-04-26):
+Schema:
 
-    One sheet per level:  ``Node``, ``Edge``, ``Graph``.
+    One sheet per level: ``Node``, ``Edge``, ``Graph``.
     Data sheets MAY contain a ``Type`` column:
         - Absent OR all values equal  → homogeneous (single key "default").
         - Present with multiple distinct values → heterogeneous; rows are split
           into per-type DataFrames keyed by type name.
-    The Parameter sheet carries a ``Type`` column and may declare multiple Type
-    values per Level for heterogeneous graphs.
+    Any ``Parameter`` sheet present in the workbook is ignored.
 
-Scope:
-    * Homogeneous and heterogeneous graphs.
-    * Y must be declared on exactly one Level (Node or Graph).
-    * Edge-level prediction (Y on Edge) is still deferred.
+Label inference:
+    * If a ``Graph`` sheet exists with at least one non-id numeric column,
+      the dataset is treated as a graph-level task and the label column is
+      picked from that sheet (preferring names containing ``y``/``target``/
+      ``label``/``score``; falling back to the first numeric non-id column).
+    * Otherwise, if a ``Node`` sheet contains a label-like column, the dataset
+      is treated as a node-level task with that column as label.
+    * Edge-level prediction is not supported.
 """
 from __future__ import annotations
 
@@ -28,9 +31,8 @@ import pandas as pd
 
 from app.data.excel_spec import (
     ExcelGraphSpec,
+    ParameterEntry,
     VALID_LEVELS,
-    parse_parameter_sheet,
-    validate_hetero_consistency,
 )
 
 
@@ -40,6 +42,13 @@ SRC_ID_CANDIDATES = ("Source_Node_ID", "src_id", "source", "Source", "SourceNode
 DST_ID_CANDIDATES = ("Target_Node_ID", "dst_id", "target", "Target", "TargetNodeID")
 GRAPH_ID_CANDIDATES = ("Graph_ID", "graph_id", "GraphID")
 TYPE_COL_CANDIDATES = ("Type", "type", "TYPE", "node_type", "edge_type")
+
+# Reserved column names that never count as features / labels.
+_NODE_RESERVED = {"node_id", "_graph", "_node_type", "Type", "Graph_ID", "Node"}
+_EDGE_RESERVED = {"src_id", "dst_id", "_graph", "_edge_type", "Type",
+                  "Graph_ID", "Source_Node_ID", "Target_Node_ID",
+                  "src_type", "dst_type", "Edge_Type"}
+_GRAPH_RESERVED = {"_graph", "Graph_ID"}
 
 
 def _pick(df: pd.DataFrame, candidates: tuple[str, ...]) -> Optional[str]:
@@ -73,23 +82,37 @@ def _infer_task_kind(series: pd.Series) -> str:
     return "regression"
 
 
-def _validate_scope(spec: ExcelGraphSpec) -> None:
-    """Enforce the scope boundary for the current implementation."""
-    y_levels = spec.y_levels()
-    if not y_levels:
-        raise ValueError(
-            "Parameter sheet must declare at least one Y row "
-            "(to indicate the prediction target)."
-        )
-    if "Edge" in y_levels:
-        raise ValueError(
-            "Edge-level prediction (Y on Edge) is not yet supported."
-        )
-    if len(y_levels) > 1:
-        raise ValueError(
-            f"Multi-task training is not yet supported; Y declared on "
-            f"multiple levels: {y_levels}."
-        )
+def _looks_like_label(name: str) -> bool:
+    n = str(name).strip().lower()
+    if n in {"y", "target", "label"}:
+        return True
+    return any(tok in n for tok in ("target", "label", "score"))
+
+
+def _pick_label_column(
+    df: pd.DataFrame,
+    reserved: set[str],
+    *,
+    allow_numeric_fallback: bool,
+) -> Optional[str]:
+    """Find the most label-like numeric column in *df*.
+
+    Preference:
+        1. First column whose name matches ``_looks_like_label``.
+        2. If ``allow_numeric_fallback`` (Graph sheet), the LAST numeric
+           non-reserved column — spreadsheet convention places the target on
+           the right.
+    Returns None when no candidate exists.
+    """
+    candidates = [c for c in df.columns if c not in reserved]
+    numeric = [c for c in candidates if pd.api.types.is_numeric_dtype(df[c])]
+
+    for c in candidates:
+        if _looks_like_label(c):
+            return c
+    if allow_numeric_fallback and numeric:
+        return numeric[-1]
+    return None
 
 
 def _load_workbook(source: bytes | str) -> dict[str, pd.DataFrame]:
@@ -103,10 +126,6 @@ def _load_workbook(source: bytes | str) -> dict[str, pd.DataFrame]:
         ) from e
     except Exception as e:
         raise ValueError(f"Could not read Excel file: {e}") from e
-    if "Parameter" not in sheets:
-        raise ValueError(
-            "Excel workbook is missing the required 'Parameter' sheet."
-        )
     return sheets
 
 
@@ -182,17 +201,80 @@ def _split_by_type(
     return per_type, True
 
 
-def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
-    """Parse an Excel workbook matching graph_data_template.xlsx.
+def _build_inferred_spec(
+    node_dfs: dict[str, pd.DataFrame],
+    edge_dfs: dict[str, pd.DataFrame],
+    graph_df: Optional[pd.DataFrame],
+    y_level: str,
+    label_column: str,
+) -> ExcelGraphSpec:
+    """Construct an ExcelGraphSpec from the data sheets.
 
-    Expected sheets: ``Parameter``, ``Node``, ``Edge`` (optional), ``Graph`` (optional).
+    For each per-type frame, every numeric column with at least one non-NaN
+    value is registered as an X feature for that type. The Y entry is added on
+    the resolved (level, type) where the label column lives.
+    """
+    entries: list[ParameterEntry] = []
+
+    def _x_columns(df: pd.DataFrame, reserved: set[str]) -> list[str]:
+        cols: list[str] = []
+        for c in df.columns:
+            if c in reserved or c == label_column:
+                continue
+            if not pd.api.types.is_numeric_dtype(df[c]):
+                continue
+            if df[c].notna().sum() == 0:
+                continue
+            cols.append(c)
+        return cols
+
+    for nt, df in node_dfs.items():
+        for c in _x_columns(df, _NODE_RESERVED):
+            entries.append(ParameterEntry(
+                xy="X", level="Node", type_=nt, parameter=c,
+            ))
+
+    for et, df in edge_dfs.items():
+        for c in _x_columns(df, _EDGE_RESERVED):
+            entries.append(ParameterEntry(
+                xy="X", level="Edge", type_=et, parameter=c,
+            ))
+
+    if graph_df is not None:
+        for c in _x_columns(graph_df, _GRAPH_RESERVED):
+            entries.append(ParameterEntry(
+                xy="X", level="Graph", type_="default", parameter=c,
+            ))
+
+    if y_level == "Node":
+        for nt, df in node_dfs.items():
+            if label_column in df.columns and df[label_column].notna().any():
+                entries.append(ParameterEntry(
+                    xy="Y", level="Node", type_=nt, parameter=label_column,
+                ))
+                break
+    elif y_level == "Graph":
+        entries.append(ParameterEntry(
+            xy="Y", level="Graph", type_="default", parameter=label_column,
+        ))
+
+    return ExcelGraphSpec(entries=entries)
+
+
+def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
+    """Parse an Excel workbook into PyG-ready DataFrames.
+
+    Expected sheets: ``Node`` (required), ``Edge`` (optional), ``Graph``
+    (optional). A ``Parameter`` sheet, if present, is ignored — task type and
+    label column are inferred from the data sheets directly.
+
     Data sheets may contain a ``Type`` column:
         - Absent or single-valued → homogeneous (``is_heterogeneous=False``).
         - Multi-valued → heterogeneous (``is_heterogeneous=True``).
 
     Returns:
         dict with keys:
-            spec                 : ExcelGraphSpec
+            spec                 : ExcelGraphSpec (built from data)
             is_heterogeneous     : bool
             nodes_df             : node DataFrame (concatenated, with ``_node_type``)
             edges_df             : edge DataFrame (concatenated, with ``_edge_type``)
@@ -202,12 +284,10 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
             canonical_edges      : list[tuple[src_type, rel, dst_type]]
             task_type            : e.g. "graph_regression"
             label_column         : Y column name
-            label_weight         : float (default 1.0)
+            label_weight         : float (always 1.0)
             name                 : dataset_name
     """
     sheets = _load_workbook(source)
-    spec = parse_parameter_sheet(sheets["Parameter"])
-    _validate_scope(spec)
 
     # ── Load Node sheet (required) ──
     if "Node" not in sheets:
@@ -217,8 +297,6 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
         )
     node_norm = _normalise_node_sheet(sheets["Node"], "Node")
     node_type_col = _pick(node_norm, TYPE_COL_CANDIDATES)
-    # Exclude the canonical id/graph columns from being mistaken for Type.
-    # _pick searches by name so node_id / _graph won't match TYPE_COL_CANDIDATES.
     node_dfs, node_is_hetero = _split_by_type(node_norm, node_type_col, "_node_type")
 
     # ── Load Edge sheet (optional) ──
@@ -231,14 +309,6 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
 
     is_heterogeneous = node_is_hetero or edge_is_hetero
 
-    # ── Validate in-sheet types against Parameter sheet declarations ──
-    node_in_sheet_types = list(node_dfs.keys()) if node_is_hetero else []
-    edge_in_sheet_types = list(edge_dfs.keys()) if edge_is_hetero else []
-    schema_warnings = validate_hetero_consistency(spec, {
-        "Node": node_in_sheet_types,
-        "Edge": edge_in_sheet_types,
-    })
-
     # ── Load Graph sheet (optional) ──
     graph_df: Optional[pd.DataFrame] = None
     if "Graph" in sheets:
@@ -249,8 +319,7 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
 
     if not node_dfs:
         raise ValueError(
-            "Parameter sheet must declare at least one Node-level entry "
-            "(to identify graph vertices)."
+            "Node sheet contains no rows; at least one node is required."
         )
 
     # Unified views (concatenate per-type frames).
@@ -266,7 +335,6 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     canonical_edges: list[tuple[str, str, str]] = []
     if edge_dfs:
         if is_heterogeneous:
-            # Build node_id -> _node_type lookup from the unified nodes frame.
             node_type_lookup: dict[str, str] = dict(
                 zip(
                     unified_nodes["node_id"].astype(str),
@@ -289,42 +357,48 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
             edge_t = next(iter(edge_dfs))
             canonical_edges.append((node_t, edge_t, node_t))
 
-    # ── derive task_type + label_column ──
-    y_level = spec.y_levels()[0]   # "Node" or "Graph"
+    # ── Infer task_type + label_column from data ──
+    label_column: Optional[str] = None
+    y_level: Optional[str] = None
+    target_series: Optional[pd.Series] = None
 
-    # For hetero, Y type may be any declared type; pick the first one.
-    y_types = spec.types_for_level(y_level)
-    y_type = y_types[0] if y_types else "default"
-    y_cols = spec.y_columns(y_level, y_type)
-    label_column = y_cols[0]
+    if graph_df is not None:
+        candidate = _pick_label_column(
+            graph_df, _GRAPH_RESERVED, allow_numeric_fallback=True,
+        )
+        if candidate is not None:
+            label_column = candidate
+            y_level = "Graph"
+            target_series = graph_df[candidate]
 
-    if y_level == "Node":
-        # Find the sub-frame that contains the label column.
-        target_df = None
-        for _t, _df in node_dfs.items():
-            if label_column in _df.columns:
-                target_df = _df
-                break
-        if target_df is None:
-            raise ValueError(
-                f"Label column '{label_column}' declared in Parameter sheet "
-                f"is not present in the Node sheet."
+    if label_column is None:
+        # Fall back to a node-level label. Node sheets usually carry many
+        # numeric features, so we require the column name to look like a
+        # label rather than picking blindly.
+        for nt, df in node_dfs.items():
+            candidate = _pick_label_column(
+                df, _NODE_RESERVED, allow_numeric_fallback=False,
             )
-        kind = _infer_task_kind(target_df[label_column])
-        task_type = f"node_{kind}"
-    elif y_level == "Graph":
-        if graph_df is None or label_column not in graph_df.columns:
-            raise ValueError(
-                f"Label column '{label_column}' declared in Parameter sheet "
-                f"is not present in the Graph sheet."
-            )
-        kind = _infer_task_kind(graph_df[label_column])
-        task_type = f"graph_{kind}"
-    else:
-        raise ValueError(f"Unsupported Y level: {y_level}")
+            if candidate is None:
+                continue
+            label_column = candidate
+            y_level = "Node"
+            target_series = df[candidate]
+            break
 
-    y_entries = [e for e in spec.entries if e.xy == "Y" and e.parameter == label_column]
-    label_weight = y_entries[0].weight if y_entries and y_entries[0].weight is not None else 1.0
+    if label_column is None or y_level is None or target_series is None:
+        raise ValueError(
+            "Could not infer a label column from the workbook. Provide a "
+            "Graph sheet with a numeric target column, or a Node sheet with a "
+            "label-like column (containing 'y', 'target', 'label', or 'score')."
+        )
+
+    kind = _infer_task_kind(target_series)
+    task_type = f"{y_level.lower()}_{kind}"
+
+    spec = _build_inferred_spec(
+        node_dfs, edge_dfs, graph_df, y_level, label_column,
+    )
 
     return {
         "spec": spec,
@@ -337,7 +411,7 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
         "canonical_edges": canonical_edges,
         "task_type": task_type,
         "label_column": label_column,
-        "label_weight": label_weight,
+        "label_weight": 1.0,
         "name": dataset_name or "excel-upload",
-        "schema_warnings": schema_warnings,
+        "schema_warnings": [],
     }
