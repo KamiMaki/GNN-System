@@ -473,6 +473,13 @@ async def get_graph_sample(
     dataset_id = ds["dataset_id"]
     excel_hash = ds.get("excel_hash", "")
 
+    # Default to the first graph on multi-graph datasets so the initial
+    # request doesn't fall back to a cross-graph BFS sample.
+    if not graph_name:
+        gi = ds.get("graph_index", [])
+        if len(gi) > 1:
+            graph_name = str(gi[0]["id"])
+
     # ETag: encode dataset content + graph selection + limit
     etag = f'"{excel_hash}-{graph_name or "all"}-{limit}"'
     if request.headers.get("if-none-match") == etag:

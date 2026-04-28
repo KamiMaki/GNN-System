@@ -96,21 +96,20 @@ export default function ExplorePage() {
         getProjectGraphSample(projectId, { graph_name: graphName })
             .then(data => {
                 setGraphSample(data);
-                // Determine the first graph id from graph_index (preferred) or graph_names fallback.
-                const firstGraph = data.graph_index?.[0]?.id ?? data.graph_names?.[0];
-                if (!graphName && firstGraph) {
-                    // Auto-select first graph for multi-graph datasets
-                    setSelectedGraph(firstGraph);
-                    setGraphSampleLoading(true);
-                    fetchGraph(firstGraph)
-                        .then(setGraphSample)
-                        .catch(console.error)
-                        .finally(() => setGraphSampleLoading(false));
+                // Backend resolves graph_name to the first graph when omitted on
+                // multi-graph datasets, so current_graph is the source of truth.
+                const resolved = data.current_graph
+                    ?? data.graph_index?.[0]?.id
+                    ?? data.graph_names?.[0];
+                if (resolved) {
+                    setSelectedGraph(resolved);
+                    // Seed the LRU cache so swapping back is instant.
+                    graphCacheRef.current.set(resolved, data);
                 }
             })
             .catch(console.error)
             .finally(() => setGraphSampleLoading(false));
-    }, [projectId, fetchGraph]);
+    }, [projectId]);
 
     useEffect(() => {
         if (!projectId) return;
