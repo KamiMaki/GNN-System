@@ -75,6 +75,8 @@ def run_hpo(
     accelerator: str = "auto",
     precision: str = "32-true",
     metadata: Optional[Metadata] = None,
+    num_targets: int = 1,
+    loss_weights: Optional[torch.Tensor] = None,
     *,
     train_items: Optional[TrainItems] = None,
     val_items: Optional[TrainItems] = None,
@@ -119,6 +121,11 @@ def run_hpo(
             model_kwargs["class_weights"] = class_weights
         if is_hetero:
             model_kwargs["metadata"] = metadata
+        # Multi-Y regression: forward num_targets + loss_weights to all paths.
+        if is_regression:
+            model_kwargs["num_targets"] = num_targets
+            if loss_weights is not None:
+                model_kwargs["loss_weights"] = loss_weights
 
         model = get_model(model_name, **model_kwargs)
 

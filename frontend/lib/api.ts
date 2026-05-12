@@ -222,6 +222,12 @@ export interface Report {
   best_config?: BestConfig;
   leaderboard?: LeaderboardEntry[];
   is_heterogeneous?: boolean;
+  // Multi-Y support — populated when the dataset declares >1 Y column.
+  // For single-Y the fields stay empty/[] and train_metrics + test_metrics
+  // + residual_data carry the data as before.
+  label_columns?: string[];
+  per_target_metrics?: Record<string, SplitMetrics>;
+  per_target_residuals?: Record<string, Array<{ actual: number; predicted: number }>>;
 }
 
 export interface RegisteredModel {

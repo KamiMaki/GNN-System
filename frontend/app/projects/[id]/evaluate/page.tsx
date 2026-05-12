@@ -210,7 +210,13 @@ export default function EvaluatePage() {
 
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 {/* Performance Metrics */}
-                <Card title="Performance Metrics">
+                <Card
+                    title={
+                        report.label_columns && report.label_columns.length > 1
+                            ? `Performance Metrics — Aggregate across ${report.label_columns.length} Y targets`
+                            : "Performance Metrics"
+                    }
+                >
                     <Space direction="vertical" size="large" style={{ width: '100%' }}>
                         <MetricsRow label="Training" metrics={report.train_metrics} />
                         {report.val_metrics && (
@@ -219,6 +225,30 @@ export default function EvaluatePage() {
                         <MetricsRow label="Test" metrics={report.test_metrics} />
                     </Space>
                 </Card>
+
+                {/* Per-Target Test Metrics (multi-Y only) */}
+                {report.per_target_metrics
+                    && Object.keys(report.per_target_metrics).length > 1 && (
+                    <Card
+                        title="Per-Target Test Metrics"
+                        extra={
+                            <Tag color="processing">
+                                {Object.keys(report.per_target_metrics).length} Y targets
+                            </Tag>
+                        }
+                    >
+                        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                            {Object.entries(report.per_target_metrics).map(([col, metrics]) => (
+                                <div key={col}>
+                                    <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                                        Y = {col}
+                                    </Text>
+                                    <MetricsRow label="Test" metrics={metrics} />
+                                </div>
+                            ))}
+                        </Space>
+                    </Card>
+                )}
 
                 {/* Confusion Matrix */}
                 {isClassification && report.confusion_matrix && (
@@ -352,19 +382,37 @@ export default function EvaluatePage() {
                     </Card>
                 )}
 
-                {/* Residual Plot */}
-                {!isClassification && report.residual_data && report.residual_data.length > 0 && (
-                    <Card title="Residual Plot (Actual vs Predicted)">
-                        <ResponsiveContainer width="100%" height={350}>
-                            <ScatterChart>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="actual" name="Actual" tick={{ fontSize: 11 }} label={{ value: 'Actual', position: 'bottom' }} />
-                                <YAxis dataKey="predicted" name="Predicted" tick={{ fontSize: 11 }} label={{ value: 'Predicted', angle: -90, position: 'left' }} />
-                                <Tooltip />
-                                <Scatter data={report.residual_data} fill={token.colorPrimary} opacity={0.6} />
-                            </ScatterChart>
-                        </ResponsiveContainer>
-                    </Card>
+                {/* Residual Plot(s) */}
+                {!isClassification && report.per_target_residuals
+                    && Object.keys(report.per_target_residuals).length > 1 ? (
+                    /* Multi-Y: one plot per target */
+                    Object.entries(report.per_target_residuals).map(([col, points]) => (
+                        <Card key={col} title={`Residual Plot — ${col} (Actual vs Predicted)`}>
+                            <ResponsiveContainer width="100%" height={350}>
+                                <ScatterChart>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="actual" name="Actual" tick={{ fontSize: 11 }} label={{ value: 'Actual', position: 'bottom' }} />
+                                    <YAxis dataKey="predicted" name="Predicted" tick={{ fontSize: 11 }} label={{ value: 'Predicted', angle: -90, position: 'left' }} />
+                                    <Tooltip />
+                                    <Scatter data={points} fill={token.colorPrimary} opacity={0.6} />
+                                </ScatterChart>
+                            </ResponsiveContainer>
+                        </Card>
+                    ))
+                ) : (
+                    !isClassification && report.residual_data && report.residual_data.length > 0 && (
+                        <Card title="Residual Plot (Actual vs Predicted)">
+                            <ResponsiveContainer width="100%" height={350}>
+                                <ScatterChart>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="actual" name="Actual" tick={{ fontSize: 11 }} label={{ value: 'Actual', position: 'bottom' }} />
+                                    <YAxis dataKey="predicted" name="Predicted" tick={{ fontSize: 11 }} label={{ value: 'Predicted', angle: -90, position: 'left' }} />
+                                    <Tooltip />
+                                    <Scatter data={report.residual_data} fill={token.colorPrimary} opacity={0.6} />
+                                </ScatterChart>
+                            </ResponsiveContainer>
+                        </Card>
+                    )
                 )}
 
                 {/* Training History */}

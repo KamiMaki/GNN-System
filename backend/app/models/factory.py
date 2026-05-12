@@ -44,6 +44,9 @@ def get_model(
     If ``metadata`` (HeteroData metadata tuple) is provided, returns a
     HeteroGraphRegressor wrapping the named backbone. Otherwise returns the
     standard homogeneous Lightning module.
+
+    ``kwargs`` may include ``num_targets`` and ``loss_weights`` for multi-Y
+    regression — both are passed through to the underlying module.
     """
     if metadata is not None:
         conv = model_name if model_name in HETERO_BACKBONES else "sage"
@@ -56,6 +59,8 @@ def get_model(
             num_classes=num_classes,
             conv=conv,
             task_type=task_type,
+            num_targets=kwargs.get("num_targets", 1),
+            loss_weights=kwargs.get("loss_weights"),
         )
 
     if model_name not in HOMO_REGISTRY:

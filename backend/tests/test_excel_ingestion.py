@@ -193,7 +193,106 @@ def test_parse_excel_multi_y_levels_deferred():
         "Node_default": nodes,
         "Graph_default": graph,
     })
-    with pytest.raises(ValueError, match="Multi-task"):
+    with pytest.raises(ValueError, match="Multi-Y across different Levels"):
+        parse_excel_file(wb)
+
+
+# ── Multi-Y on a single Level (new in 2026-05-12) ──────────────────────
+
+def test_parse_excel_multi_y_graph_regression():
+    """Two continuous Y columns on Graph level → multi-Y regression."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1", "Weight": None},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y1", "Weight": 2.0},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y2", "Weight": 0.5},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 2, 2],
+        "Node": [0, 1, 0, 1],
+        "Type": ["default"] * 4,
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+    })
+    graph = pd.DataFrame({
+        "Graph_ID": [1, 2],
+        "Type": ["default", "default"],
+        "y1": [3.14, 2.71],
+        "y2": [1.41, 1.62],
+    })
+    wb = _build_workbook({
+        "Parameter": parameter, "Node_default": nodes, "Graph_default": graph,
+    })
+    result = parse_excel_file(wb)
+    assert result["task_type"] == "graph_regression"
+    assert result["label_columns"] == ["y1", "y2"]
+    assert result["label_weights"] == [2.0, 0.5]
+    # Backwards-compat: singular fields still emitted.
+    assert result["label_column"] == "y1"
+    assert result["label_weight"] == 2.0
+
+
+def test_parse_excel_multi_y_node_regression():
+    """Two continuous Y columns on Node level → multi-Y node regression."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1", "Weight": None},
+        {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "delay", "Weight": 1.0},
+        {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "slack", "Weight": 3.0},
+    ])
+    nodes = pd.DataFrame({
+        "Node": [0, 1, 2, 3],
+        "Type": ["default"] * 4,
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+        "delay": [0.15, 0.42, -0.33, 1.7],
+        "slack": [-0.05, 0.12, 0.88, -0.4],
+    })
+    wb = _build_workbook({"Parameter": parameter, "Node_default": nodes})
+    result = parse_excel_file(wb)
+    assert result["task_type"] == "node_regression"
+    assert result["label_columns"] == ["delay", "slack"]
+    assert result["label_weights"] == [1.0, 3.0]
+
+
+def test_parse_excel_multi_y_mixed_kinds_rejected():
+    """Mixing regression + classification Y on the same Level is rejected."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "score"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "cls"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 2], "Node": [0, 0],
+        "Type": ["default", "default"], "X_1": [0.1, 0.2],
+    })
+    graph = pd.DataFrame({
+        "Graph_ID": [1, 2], "Type": ["default", "default"],
+        "score": [3.14, 2.71],   # continuous
+        "cls": [0, 1],            # integer few-uniques → classification
+    })
+    wb = _build_workbook({
+        "Parameter": parameter, "Node_default": nodes, "Graph_default": graph,
+    })
+    with pytest.raises(ValueError, match="same kind"):
+        parse_excel_file(wb)
+
+
+def test_parse_excel_multi_y_classification_rejected():
+    """Multi-Y classification is deferred to v2; raises with a clear message."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "cls_a"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "cls_b"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 2], "Node": [0, 0],
+        "Type": ["default", "default"], "X_1": [0.1, 0.2],
+    })
+    graph = pd.DataFrame({
+        "Graph_ID": [1, 2], "Type": ["default", "default"],
+        "cls_a": [0, 1], "cls_b": [1, 0],
+    })
+    wb = _build_workbook({
+        "Parameter": parameter, "Node_default": nodes, "Graph_default": graph,
+    })
+    with pytest.raises(ValueError, match="Multi-Y classification"):
         parse_excel_file(wb)
 
 

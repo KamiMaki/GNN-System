@@ -56,13 +56,18 @@ def _build_single_hetero(
     node_dfs: dict[str, pd.DataFrame],
     edge_dfs: dict[str, pd.DataFrame],
     graph_df: pd.DataFrame,
-    label_column: str,
+    label_columns: list[str],
     canonical_edges: list[tuple[str, str, str]],
     scalers: dict[str, StandardScaler],
     feature_cols: dict[str, list[str]],
 ) -> HeteroData:
-    """Build one HeteroData for a single graph_id."""
+    """Build one HeteroData for a single graph_id.
+
+    ``label_columns`` carries one or more Y columns; the resulting ``data.y``
+    has shape ``[1]`` for single-Y and ``[T]`` for multi-Y.
+    """
     data = HeteroData()
+    T = len(label_columns)
 
     # node types + id → local index maps per type
     id_maps: dict[str, dict] = {}
@@ -100,12 +105,19 @@ def _build_single_hetero(
             edge_index = torch.zeros((2, 0), dtype=torch.long)
         data[src_t, rel, dst_t].edge_index = edge_index
 
-    # graph-level label
+    # graph-level label(s)
     row = graph_df[graph_df["_graph"] == graph_id]
     if row.empty:
-        raise ValueError(f"Graph_{label_column}: no row found for graph {graph_id}")
-    y_val = row[label_column].iloc[0]
-    data.y = torch.tensor([float(y_val)], dtype=torch.float)
+        raise ValueError(
+            f"Graph sheet has no row for graph {graph_id} (labels {label_columns})."
+        )
+    vals = [float(row[c].iloc[0]) for c in label_columns]
+    if T == 1:
+        data.y = torch.tensor([vals[0]], dtype=torch.float)
+    else:
+        # Shape (1, T) so PyG batching concatenates to (B, T) at the graph level.
+        data.y = torch.tensor([vals], dtype=torch.float)
+    data.num_targets = T
 
     # Append reverse edges so every node type appears as a destination.
     data = _TO_UNDIRECTED(data)
@@ -117,6 +129,10 @@ def parsed_excel_to_hetero_list(
 ) -> tuple[list[HeteroData], dict[str, StandardScaler], dict[str, list[str]], list[tuple[str, str, str]]]:
     """Convert a parse_excel_file() result into a list of HeteroData (one per graph).
 
+    Supports multi-Y: when ``parsed`` carries ``label_columns`` (list[str]) the
+    resulting HeteroData.y for each graph is a vector of length T. The legacy
+    ``label_column`` key is honoured as a fallback.
+
     Returns:
         data_list, scalers, feature_names_by_type, metadata_edges
     metadata_edges is a list of canonical (src_type, relation, dst_type) tuples —
@@ -126,7 +142,7 @@ def parsed_excel_to_hetero_list(
     node_dfs = parsed["node_dfs"]
     edge_dfs = parsed["edge_dfs"]
     graph_df = parsed["graph_df"]
-    label_column = parsed["label_column"]
+    label_columns = list(parsed.get("label_columns") or [parsed["label_column"]])
     canonical_edges = parsed["canonical_edges"]
 
     if graph_df is None:
@@ -152,7 +168,7 @@ def parsed_excel_to_hetero_list(
     data_list: list[HeteroData] = []
     for gid in graph_ids:
         d = _build_single_hetero(
-            gid, node_dfs, edge_dfs, graph_df, label_column,
+            gid, node_dfs, edge_dfs, graph_df, label_columns,
             canonical_edges, scalers, feature_cols,
         )
         data_list.append(d)

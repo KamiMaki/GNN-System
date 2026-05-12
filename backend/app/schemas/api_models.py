@@ -48,6 +48,9 @@ class DatasetSummary(BaseModel):
     is_heterogeneous: bool = False
     node_types: list[str] = []
     edge_types: list[str] = []
+    # Multi-Y support: parallel lists. For single-Y both have length 1.
+    label_columns: list[str] = []
+    label_weights: list[float] = []
 
 
 # ── Explore ────────────────────────────────────────────────────────────────
@@ -232,6 +235,12 @@ class Report(BaseModel):
     best_config: Optional[BestConfig] = None
     leaderboard: Optional[list[LeaderboardEntry]] = None
     is_heterogeneous: bool = False
+    # Multi-Y support. For single-Y label_columns has length 1 and
+    # per_target_metrics / per_target_residuals stay empty (the legacy
+    # test_metrics + residual_data fields carry the data).
+    label_columns: list[str] = []
+    per_target_metrics: dict[str, SplitMetrics] = {}
+    per_target_residuals: dict[str, list[dict]] = {}
 
 
 # ── Training ───────────────────────────────────────────────────────────────

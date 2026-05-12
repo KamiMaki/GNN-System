@@ -4,6 +4,8 @@ import pytorch_lightning as pl
 from torch_geometric.nn import global_mean_pool
 from torch.nn import Linear, BatchNorm1d
 
+from app.models.loss import weighted_regression_loss
+
 
 class MLPClassifier(pl.LightningModule):
     """MLP baseline that ignores graph structure. Uses only node features."""
@@ -18,12 +20,21 @@ class MLPClassifier(pl.LightningModule):
         lr: float = 1e-3,
         class_weights: torch.Tensor | None = None,
         task_type: str = "node_classification",
+        num_targets: int = 1,
+        loss_weights: torch.Tensor | None = None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["class_weights"])
+        self.save_hyperparameters(ignore=["class_weights", "loss_weights"])
         self.lr = lr
         self.class_weights = class_weights
         self.task_type = task_type
+        self.num_targets = int(num_targets)
+        if loss_weights is not None:
+            self.register_buffer(
+                "loss_weights", torch.as_tensor(loss_weights, dtype=torch.float),
+            )
+        else:
+            self.loss_weights = None
 
         layers = []
         layers.append(Linear(num_features, hidden_dim))
@@ -31,7 +42,7 @@ class MLPClassifier(pl.LightningModule):
             layers.append(Linear(hidden_dim, hidden_dim))
         self.layers = torch.nn.ModuleList(layers)
         self.bns = torch.nn.ModuleList([BatchNorm1d(hidden_dim) for _ in range(num_layers)])
-        self.classifier = Linear(hidden_dim, num_classes)
+        self.classifier = Linear(hidden_dim, num_classes * self.num_targets)
         self.dropout = dropout
 
     def forward(self, x, edge_index=None, edge_attr=None, batch=None):
@@ -43,14 +54,14 @@ class MLPClassifier(pl.LightningModule):
         if self.task_type.startswith("graph"):
             x = global_mean_pool(x, batch)
         out = self.classifier(x)
-        if self.task_type.endswith("regression"):
+        if self.task_type.endswith("regression") and self.num_targets == 1:
             out = out.squeeze(-1)
         return out
 
     def _shared_step(self, batch, stage: str):
         out = self(batch.x, batch.edge_index if hasattr(batch, "edge_index") else None, batch.edge_attr if hasattr(batch, "edge_attr") else None, batch=batch.batch if hasattr(batch, "batch") else None)
         if self.task_type.endswith("regression"):
-            loss = F.mse_loss(out, batch.y)
+            loss = weighted_regression_loss(out, batch.y, self.loss_weights, self.num_targets)
             self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.num_nodes)
         else:
             weight = self.class_weights.to(out.device) if self.class_weights is not None else None

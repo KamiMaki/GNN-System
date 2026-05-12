@@ -83,7 +83,12 @@ def _infer_task_kind(series: pd.Series) -> str:
 
 
 def _validate_scope(spec: ExcelGraphSpec) -> None:
-    """Enforce the scope boundary for the current implementation."""
+    """Enforce the scope boundary for the current implementation.
+
+    Multi-Y on a single Level (e.g. several Y columns all on Graph) is
+    supported as of 2026-05-12 for the regression path. Multi-Y across
+    different Levels and Edge-level Y remain deferred.
+    """
     y_levels = spec.y_levels()
     if not y_levels:
         raise ValueError(
@@ -96,8 +101,8 @@ def _validate_scope(spec: ExcelGraphSpec) -> None:
         )
     if len(y_levels) > 1:
         raise ValueError(
-            f"Multi-task training is not yet supported; Y declared on "
-            f"multiple levels: {y_levels}."
+            f"Multi-Y across different Levels is not yet supported; Y declared on "
+            f"multiple levels: {y_levels}. Place all Y columns on the same Level."
         )
 
 
@@ -306,33 +311,63 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
             st = dt = default_node_type
         canonical_edges.append((st, rel, dt))
 
-    # ── derive task_type + label_column ──
-    y_type = spec.types_for_level(y_level)[0]
-    y_cols = spec.y_columns(y_level, y_type)
-    label_column = y_cols[0]
+    # ── derive task_type + label_columns (multi-Y aware) ──
+    # All Y entries are on the same Level (validated above). Multiple Y
+    # entries per Level — each becomes a parallel regression target.
+    y_entries_all = [e for e in spec.entries if e.xy == "Y" and e.level == y_level]
+    y_types_seen = []
+    for e in y_entries_all:
+        if e.type_ not in y_types_seen:
+            y_types_seen.append(e.type_)
 
-    if y_level == "Node":
-        target_df = node_dfs.get(y_type)
-        if target_df is None or label_column not in target_df.columns:
-            raise ValueError(
-                f"Label column '{label_column}' declared in Parameter sheet "
-                f"is not present in data sheet Node_{y_type}."
-            )
-        kind = _infer_task_kind(target_df[label_column])
-        task_type = f"node_{kind}"
-    elif y_level == "Graph":
-        if graph_df is None or label_column not in graph_df.columns:
-            raise ValueError(
-                f"Label column '{label_column}' declared in Parameter sheet "
-                f"is not present in Graph_{y_type} sheet."
-            )
-        kind = _infer_task_kind(graph_df[label_column])
-        task_type = f"graph_{kind}"
-    else:
-        raise ValueError(f"Unsupported Y level: {y_level}")
+    label_columns: list[str] = [e.parameter for e in y_entries_all]
+    label_weights: list[float] = [
+        float(e.weight) if e.weight is not None else 1.0
+        for e in y_entries_all
+    ]
 
-    y_entries = [e for e in spec.entries if e.xy == "Y" and e.parameter == label_column]
-    label_weight = y_entries[0].weight if y_entries and y_entries[0].weight is not None else 1.0
+    # Locate the source DataFrame holding each Y column + verify presence.
+    def _source_df_for_level(level: str, type_: str) -> pd.DataFrame:
+        if level == "Node":
+            df = node_dfs.get(type_)
+            sheet_label = f"Node_{type_}"
+        else:  # Graph
+            df = graph_df
+            sheet_label = f"Graph_{type_}"
+        if df is None:
+            raise ValueError(
+                f"Parameter sheet declares Y on {level}/{type_} but the "
+                f"{sheet_label} data sheet is missing."
+            )
+        return df
+
+    kinds: list[str] = []
+    for e in y_entries_all:
+        src_df = _source_df_for_level(y_level, e.type_)
+        if e.parameter not in src_df.columns:
+            raise ValueError(
+                f"Label column '{e.parameter}' declared in Parameter sheet "
+                f"is not present in data sheet {y_level}_{e.type_}."
+            )
+        kinds.append(_infer_task_kind(src_df[e.parameter]))
+
+    if len(set(kinds)) > 1:
+        mixed = list(zip(label_columns, kinds))
+        raise ValueError(
+            f"All Y columns must be the same kind (regression or classification); "
+            f"got mixed kinds: {mixed}."
+        )
+    kind = kinds[0]
+    if len(label_columns) > 1 and kind == "classification":
+        raise ValueError(
+            "Multi-Y classification is not yet supported; only multi-Y "
+            "regression is supported in this release."
+        )
+    task_type = f"{y_level.lower()}_{kind}"
+
+    # Backwards-compatible singular fields (first Y).
+    label_column = label_columns[0]
+    label_weight = label_weights[0]
 
     return {
         "spec": spec,
@@ -346,5 +381,7 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
         "task_type": task_type,
         "label_column": label_column,
         "label_weight": label_weight,
+        "label_columns": label_columns,
+        "label_weights": label_weights,
         "name": dataset_name or "excel-upload",
     }

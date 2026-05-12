@@ -122,6 +122,12 @@ def _dataset_to_summary(ds: dict) -> DatasetSummary:
         is_heterogeneous=ds.get("is_heterogeneous", False),
         node_types=ds.get("node_types", []),
         edge_types=ds.get("edge_types", []),
+        label_columns=ds.get("label_columns") or (
+            [ds["label_column"]] if ds.get("label_column") else []
+        ),
+        label_weights=ds.get("label_weights") or (
+            [ds["label_weight"]] if ds.get("label_weight") is not None else []
+        ),
     )
 
 
@@ -309,6 +315,9 @@ async def _store_excel_dataset(project_id: str, content: bytes, name: str) -> Da
         "schema_spec": schema_payload,
         "label_column": label_column,
         "label_weight": parsed["label_weight"],
+        # Multi-Y support: parallel lists; for single-Y these are length-1.
+        "label_columns": parsed.get("label_columns") or [label_column],
+        "label_weights": parsed.get("label_weights") or [parsed["label_weight"]],
     }
     store.put_dataset(dataset_id, ds_record)
 

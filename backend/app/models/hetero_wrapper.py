@@ -17,6 +17,8 @@ from torch_geometric.nn import (
     GCNConv, GATConv, SAGEConv, GINConv, global_mean_pool, to_hetero,
 )
 
+from app.models.loss import weighted_regression_loss
+
 
 class _HomoBackbone(nn.Module):
     """A plain, type-agnostic GNN body suitable for ``to_hetero`` lifting.
@@ -57,7 +59,10 @@ class _HomoBackbone(nn.Module):
 class HeteroGraphRegressor(pl.LightningModule):
     """to_hetero-wrapped GNN with per-type mean-pool + linear head.
 
-    Works for ``graph_regression`` (scalar) and ``graph_classification`` (logits).
+    Works for ``graph_regression`` (scalar or vector) and
+    ``graph_classification`` (logits). Multi-target regression is enabled by
+    passing ``num_targets > 1`` and an optional ``loss_weights`` tensor of
+    length T.
     """
     def __init__(
         self,
@@ -69,12 +74,21 @@ class HeteroGraphRegressor(pl.LightningModule):
         num_classes: int = 1,
         conv: str = "sage",
         task_type: str = "graph_regression",
+        num_targets: int = 1,
+        loss_weights: torch.Tensor | None = None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["metadata"])
+        self.save_hyperparameters(ignore=["metadata", "loss_weights"])
         self.lr = lr
         self.task_type = task_type
         self.metadata = metadata
+        self.num_targets = int(num_targets)
+        if loss_weights is not None:
+            self.register_buffer(
+                "loss_weights", torch.as_tensor(loss_weights, dtype=torch.float),
+            )
+        else:
+            self.loss_weights = None
 
         backbone = _HomoBackbone(
             num_features=-1, hidden_dim=hidden_dim,
@@ -82,7 +96,9 @@ class HeteroGraphRegressor(pl.LightningModule):
         )
         self.hetero_gnn = to_hetero(backbone, metadata, aggr="mean")
         self.node_types = list(metadata[0])
-        self.head = nn.Linear(hidden_dim * len(self.node_types), num_classes)
+        # For regression: emit T outputs (num_classes==1).
+        # For classification: multi-Y is rejected upstream so num_targets==1.
+        self.head = nn.Linear(hidden_dim * len(self.node_types), num_classes * self.num_targets)
 
     # ── inference ──
 
@@ -103,7 +119,7 @@ class HeteroGraphRegressor(pl.LightningModule):
                 pooled.append(global_mean_pool(h, b))
         z = torch.cat(pooled, dim=-1)
         out = self.head(z)
-        if self.task_type.endswith("regression"):
+        if self.task_type.endswith("regression") and self.num_targets == 1:
             out = out.squeeze(-1)
         return out
 
@@ -116,7 +132,7 @@ class HeteroGraphRegressor(pl.LightningModule):
         out = self(x_dict, edge_index_dict, batch_dict)
 
         if self.task_type.endswith("regression"):
-            loss = F.mse_loss(out, batch.y)
+            loss = weighted_regression_loss(out, batch.y, self.loss_weights, self.num_targets)
         else:
             loss = F.cross_entropy(out, batch.y.long())
         self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.y.size(0))
