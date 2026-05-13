@@ -192,17 +192,34 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
         Columns declared for OTHER types in the Parameter sheet are dropped
         from each per-type slice so downstream feature extraction doesn't
         treat them as missing-data columns.
+
+        When the data sheet has **no** Type column:
+          * If the Parameter sheet declares exactly one Type for this Level,
+            all rows are assigned to that single Type — homogeneous-friendly
+            layout where the user can skip the Type column entirely.
+          * If the Parameter sheet declares more than one Type, a Type column
+            is required to disambiguate — raise a clear ValueError.
         """
         type_col = next(
             (c for c in unified.columns if str(c).strip().lower() == "type"),
             None,
         )
         if type_col is None:
-            raise ValueError(
-                f"Sheet '{level}' is missing a 'Type' column "
-                f"(required when using the unified single-sheet layout; "
-                f"expected types: {declared_types})."
-            )
+            if len(declared_types) == 1:
+                # Homogeneous layout: synthesise a Type column with the
+                # single declared type so the rest of the function works
+                # uniformly.
+                unified = unified.copy()
+                unified["Type"] = declared_types[0]
+                type_col = "Type"
+            else:
+                raise ValueError(
+                    f"Sheet '{level}' is missing a 'Type' column. "
+                    f"The Parameter sheet declares multiple Types "
+                    f"({declared_types}); a Type column is required to "
+                    f"split rows. (For a single-Type / homogeneous sheet you "
+                    f"may omit the Type column.)"
+                )
         if type_col != "Type":
             unified = unified.rename(columns={type_col: "Type"})
 

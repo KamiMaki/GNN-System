@@ -93,7 +93,7 @@ export default function GraphPreview({ graphSample }: GraphPreviewProps) {
       }))
       .filter(l => nodeIdSet.has(l.source) && nodeIdSet.has(l.target));
     return { nodes, links };
-  }, [graphSample]);
+  }, [graphSample, typeColors]);
 
   const detailNode = useMemo(() => {
     const id = selectedNodeId || hoveredNodeId;

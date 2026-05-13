@@ -35,7 +35,9 @@ class ParameterEntry:
     level: Literal["Node", "Edge", "Graph"]
     type_: str                 # Type sheet suffix (e.g. "default", "cell", "pin")
     parameter: str             # column name inside the corresponding data sheet
-    weight: Optional[float] = None   # loss weight (Y only); None ⇒ default 1.0
+    # Loss weight. For Y rows: blank cell ⇒ 1.0 (default), explicit number used as-is.
+    # For X rows: stays None (weight is meaningless for features).
+    weight: Optional[float] = None
 
 
 @dataclass
@@ -149,15 +151,19 @@ def parse_parameter_sheet(df: pd.DataFrame) -> ExcelGraphSpec:
             raise ValueError(f"Parameter sheet row {idx + 2}: Parameter name is required.")
 
         weight: Optional[float] = None
-        if xy == "Y" and has_weight:
-            w_raw = _get(row, "Weight")
-            if not pd.isna(w_raw) and str(w_raw).strip() != "":
-                try:
-                    weight = float(w_raw)
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        f"Parameter sheet row {idx + 2}: Weight must be numeric, got {w_raw!r}."
-                    )
+        if xy == "Y":
+            # Default weight for Y rows is 1.0 — applied whether the Weight
+            # column is absent entirely or the cell is blank.
+            weight = 1.0
+            if has_weight:
+                w_raw = _get(row, "Weight")
+                if not pd.isna(w_raw) and str(w_raw).strip() != "":
+                    try:
+                        weight = float(w_raw)
+                    except (TypeError, ValueError):
+                        raise ValueError(
+                            f"Parameter sheet row {idx + 2}: Weight must be numeric, got {w_raw!r}."
+                        )
 
         entries.append(ParameterEntry(
             xy=xy, level=level, type_=type_, parameter=parameter, weight=weight,

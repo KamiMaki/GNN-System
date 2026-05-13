@@ -122,6 +122,28 @@ def test_parse_parameter_sheet_blank_rows_skipped():
     assert len(spec.entries) == 2
 
 
+def test_parse_parameter_sheet_y_blank_weight_defaults_to_one():
+    """Blank Weight cell for a Y row → ParameterEntry.weight == 1.0 (not None)."""
+    df = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1", "Weight": None},
+        {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "label", "Weight": None},
+    ])
+    spec = parse_parameter_sheet(df)
+    y_entry = next(e for e in spec.entries if e.xy == "Y")
+    assert y_entry.weight == 1.0, f"Y weight default must be 1.0, got {y_entry.weight!r}"
+
+
+def test_parse_parameter_sheet_y_no_weight_column_defaults_to_one():
+    """Parameter sheet without a Weight column → Y rows still get weight 1.0."""
+    df = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "label"},
+    ])
+    spec = parse_parameter_sheet(df)
+    y_entry = next(e for e in spec.entries if e.xy == "Y")
+    assert y_entry.weight == 1.0
+
+
 def test_parse_parameter_sheet_weight_non_numeric():
     df = pd.DataFrame([
         {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "label", "Weight": "high"},
@@ -436,6 +458,131 @@ def test_parse_excel_hetero_unified_single_sheet():
     # Edge frame should carry its own feature.
     assert "c2p_delay" in result["edge_dfs"]["cell2pin"].columns
     assert result["canonical_edges"] == [("cell", "cell2pin", "pin")]
+
+
+def test_parse_excel_graph_sheet_without_type_column():
+    """Graph sheet without Type column → single declared Graph Type used."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "score"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 2, 2], "Node": [0, 1, 0, 1],
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+    })
+    # NOTE: Graph sheet intentionally has no Type column.
+    graph = pd.DataFrame({"Graph_ID": [1, 2], "score": [3.14, 2.71]})
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes, "Graph": graph})
+    result = parse_excel_file(wb)
+    assert result["task_type"] == "graph_regression"
+    assert result["graph_df"] is not None
+    assert len(result["graph_df"]) == 2
+    assert "score" in result["graph_df"].columns
+
+
+def test_parse_excel_edge_sheet_without_type_column_single_type():
+    """Edge sheet without Type column + single declared Edge Type → ok."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "X", "Level": "Edge", "Type": "default", "Parameter": "w"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1], "Node": [0, 1], "X_1": [0.1, 0.2],
+    })
+    # Edge sheet without Type column.
+    edges = pd.DataFrame({
+        "Graph_ID": [1], "Source_Node_ID": [0], "Target_Node_ID": [1], "w": [0.5],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "y": [0.9]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node": nodes, "Edge": edges, "Graph": graph,
+    })
+    result = parse_excel_file(wb)
+    assert "default" in result["edge_dfs"]
+    assert len(result["edge_dfs"]["default"]) == 1
+
+
+def test_parse_excel_edge_sheet_missing_type_column_multi_type_raises():
+    """Edge sheet without Type column + multiple declared Edge Types → error."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "X", "Level": "Edge", "Type": "rel_a", "Parameter": "wa"},
+        {"XY": "X", "Level": "Edge", "Type": "rel_b", "Parameter": "wb"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1], "Node": [0, 1], "X_1": [0.1, 0.2],
+    })
+    # Edge sheet with no Type column but Parameter declares two edge Types.
+    edges = pd.DataFrame({
+        "Graph_ID": [1], "Source_Node_ID": [0], "Target_Node_ID": [1],
+        "wa": [0.5], "wb": [0.3],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "y": [0.9]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node": nodes, "Edge": edges, "Graph": graph,
+    })
+    with pytest.raises(ValueError, match="missing a 'Type' column"):
+        parse_excel_file(wb)
+
+
+def test_parse_excel_multi_y_graph_without_type_column():
+    """Multi-Y graph regression with Graph sheet missing Type column."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y1", "Weight": 2.0},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y2"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 2, 2], "Node": [0, 1, 0, 1],
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+    })
+    graph = pd.DataFrame({
+        "Graph_ID": [1, 2], "y1": [3.14, 2.71], "y2": [1.41, 1.62],
+    })
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes, "Graph": graph})
+    result = parse_excel_file(wb)
+    assert result["task_type"] == "graph_regression"
+    assert result["label_columns"] == ["y1", "y2"]
+    # First Y had explicit weight, second was blank → 1.0 default.
+    assert result["label_weights"] == [2.0, 1.0]
+
+
+def test_parse_excel_unified_node_without_type_column_single_type_homogeneous():
+    """Single declared Node Type + Node sheet without Type column → homogeneous."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Node", "Type": "default", "Parameter": "label"},
+    ])
+    nodes = pd.DataFrame({
+        "Node": [0, 1, 2, 3],
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+        "label": [0.5, 0.6, 0.7, 0.8],
+    })
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes})
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is False
+    assert set(result["node_dfs"].keys()) == {"default"}
+    assert len(result["node_dfs"]["default"]) == 4
+
+
+def test_parse_excel_node_type_column_presence_marks_heterogeneous():
+    """Parameter declares multiple Node Types + Node has Type column → heterogeneous."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "cell", "Parameter": "ca"},
+        {"XY": "X", "Level": "Node", "Type": "pin", "Parameter": "pc"},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "y"},
+    ])
+    nodes = pd.DataFrame([
+        {"Graph_ID": 1, "Node": 0, "Type": "cell", "ca": 1.0, "pc": None},
+        {"Graph_ID": 1, "Node": 1, "Type": "pin", "ca": None, "pc": 0.1},
+    ])
+    graph = pd.DataFrame({"Graph_ID": [1], "y": [3.14]})
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes, "Graph": graph})
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is True
+    assert set(result["node_dfs"].keys()) == {"cell", "pin"}
 
 
 def test_parse_excel_unified_node_missing_type_column_raises():

@@ -209,11 +209,89 @@ def make_hetero(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
     }
 
 
+# ── Homogeneous demo WITHOUT Type columns (auto-detected homo) ────────────
+# Demonstrates the "no Type column needed for single-type sheets" path. The
+# Parameter sheet still declares Type=default for every entry; the data
+# sheets simply omit the Type column so users don't have to write it.
+
+def make_homo_no_type(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
+    sheets = make_homo(n_graphs)
+    nodes = sheets["Node"].drop(columns=[c for c in ("Type",) if c in sheets["Node"].columns])
+    edges = sheets["Edge"].drop(columns=[c for c in ("Type",) if c in sheets["Edge"].columns])
+    graph = sheets["Graph"].drop(columns=[c for c in ("Type",) if c in sheets["Graph"].columns])
+    return {
+        "Parameter": sheets["Parameter"],
+        "Node": nodes,
+        "Edge": edges,
+        "Graph": graph,
+    }
+
+
+# ── Multi-Y graph regression demo (no Type columns) ──────────────────────
+
+def make_multi_y_no_type(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
+    """Two Y targets (target_delay + target_power_mw) on a homo graph,
+    using the Type-column-free layout end-to-end."""
+    rng = random.Random(SEED + 2)
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "delay_ps", "Weight": None},
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "area_um2", "Weight": None},
+        {"XY": "X", "Level": "Node", "Type": "default", "Parameter": "fanout", "Weight": None},
+        {"XY": "X", "Level": "Edge", "Type": "default", "Parameter": "wire_length_um", "Weight": None},
+        {"XY": "X", "Level": "Graph", "Type": "default", "Parameter": "num_cells", "Weight": None},
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "target_delay", "Weight": 2.0},
+        # Second Y has BLANK weight → defaults to 1.0
+        {"XY": "Y", "Level": "Graph", "Type": "default", "Parameter": "target_power_mw", "Weight": None},
+    ])
+    node_rows, edge_rows, graph_rows = [], [], []
+    for gid in range(1, n_graphs + 1):
+        n_nodes = rng.randint(15, 35)
+        node_ids = list(range(n_nodes))
+        total_delay = 0.0
+        total_area = 0.0
+        for nid in node_ids:
+            delay = rng.randint(5, 60)
+            area = round(rng.uniform(0.3, 3.0), 3)
+            total_delay += delay
+            total_area += area
+            node_rows.append({
+                "Graph_ID": gid, "Node": nid,
+                "delay_ps": delay, "area_um2": area,
+                "fanout": rng.randint(1, 10),
+            })
+        n_edges = int(n_nodes * 1.5)
+        for _ in range(n_edges):
+            s = rng.choice(node_ids)
+            d = rng.choice(node_ids)
+            if s == d:
+                continue
+            edge_rows.append({
+                "Graph_ID": gid, "Source_Node_ID": s, "Target_Node_ID": d,
+                "wire_length_um": round(rng.uniform(1.0, 100.0), 2),
+            })
+        graph_rows.append({
+            "Graph_ID": gid,
+            "num_cells": n_nodes,
+            "target_delay": round(total_delay / n_nodes + rng.uniform(-2, 2), 3),
+            "target_power_mw": round(total_area * 0.5 + rng.uniform(-1, 1), 3),
+        })
+    return {
+        "Parameter": parameter,
+        "Node": pd.DataFrame(node_rows),
+        "Edge": pd.DataFrame(edge_rows),
+        "Graph": pd.DataFrame(graph_rows),
+    }
+
+
 def main() -> None:
     homo_v2 = OUT / "demo_multigraph_homo.v2.xlsx"
     hetero_v2 = OUT / "demo_multigraph_hetero.v2.xlsx"
+    homo_no_type = OUT / "demo_multigraph_homo_no_type.xlsx"
+    multi_y_no_type = OUT / "demo_multigraph_multi_y.xlsx"
     _write(homo_v2, make_homo())
     _write(hetero_v2, make_hetero())
+    _write(homo_no_type, make_homo_no_type())
+    _write(multi_y_no_type, make_multi_y_no_type())
     # Also refresh the unversioned aliases (best-effort; may be locked by Excel).
     for name, builder in (("demo_multigraph_homo.xlsx", make_homo),
                           ("demo_multigraph_hetero.xlsx", make_hetero)):
@@ -223,6 +301,8 @@ def main() -> None:
             print(f"Skipped {name} (open in Excel?)")
     print(f"Wrote {homo_v2}")
     print(f"Wrote {hetero_v2}")
+    print(f"Wrote {homo_no_type}")
+    print(f"Wrote {multi_y_no_type}")
 
 
 if __name__ == "__main__":

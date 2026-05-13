@@ -166,6 +166,22 @@ DEMO_EXCELS = [
         "tags": ["multi-graph", "homogeneous", "graph-regression"],
     },
     {
+        "id": "multigraph_homo_no_type",
+        "name": "Multi-Graph Homogeneous (no Type column)",
+        "description": "30 graphs, homogeneous, Node/Edge/Graph sheets WITHOUT a Type column — auto-detected as homogeneous",
+        "filename": "demo_multigraph_homo_no_type.xlsx",
+        "is_heterogeneous": False,
+        "tags": ["multi-graph", "homogeneous", "graph-regression", "no-type-column"],
+    },
+    {
+        "id": "multigraph_multi_y",
+        "name": "Multi-Graph Multi-Y Regression",
+        "description": "30 graphs, homogeneous, two Y targets (target_delay weight=2.0 + target_power_mw weight=1.0 default), no Type column",
+        "filename": "demo_multigraph_multi_y.xlsx",
+        "is_heterogeneous": False,
+        "tags": ["multi-graph", "homogeneous", "graph-regression", "multi-y", "no-type-column"],
+    },
+    {
         "id": "multigraph_hetero",
         "name": "Multi-Graph Heterogeneous",
         "description": "30 graphs, 3 node types (cell/pin/net), 3 edge types, graph_regression target (total_wirelength)",
