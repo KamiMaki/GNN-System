@@ -207,26 +207,41 @@ def _infer_param_types_from_sheets(
     spec: ExcelGraphSpec,
     sheets: dict[str, pd.DataFrame],
 ) -> None:
-    """Populate ``spec`` with Type assignments derived from the data sheets.
+    """Resolve per-Level Type information by inspecting the data sheets.
 
-    For each Level that has Parameter rows but no Type was given in the
-    Parameter sheet, this walks the Node / Edge / Graph sheets, lists their
-    distinct Type values, and assigns each Parameter to the Types whose slice
-    actually contains data (i.e. the column exists and has at least one
-    non-null value).
+    Runs **per level** so that mixed setups work cleanly:
+      * If a Level's Types were declared by the Parameter sheet's Type column,
+        keep them as-is.
+      * Otherwise discover Types from the data sheets (the unified
+        Node/Edge/Graph sheet's Type column, or legacy ``Level_<type>``
+        sheets) and assign each declared Parameter to the Types whose slice
+        actually contains data.
+
+    **Edge is special**: edges describe graph connectivity, so the Edge sheet
+    is loaded whenever it is present — even if the Parameter sheet has no
+    Edge-level rows. In that case Types are still discovered from the Edge
+    sheet (or default to ``["default"]``) so the downstream split + canonical
+    edge resolution stays uniform.
     """
     for level in VALID_LEVELS:
-        level_entries = spec.entries_for_level(level)
-        if not level_entries:
+        if spec.types_for_level(level):
+            # Already populated by parse_parameter_sheet from the Type column.
             continue
+
+        level_entries = spec.entries_for_level(level)
         types, type_slices = _discover_types_from_data(level, sheets)
+
         if not types:
-            decl = sorted({e.parameter for e in level_entries})
-            raise ValueError(
-                f"Parameter sheet declares {level}-level parameters {decl} but "
-                f"no '{level}' (or 'Level_<type>') data sheet was found to "
-                f"infer Types from."
-            )
+            if level_entries:
+                decl = sorted({e.parameter for e in level_entries})
+                raise ValueError(
+                    f"Parameter sheet declares {level}-level parameters {decl} "
+                    f"but no '{level}' (or '{level}_<type>') data sheet was "
+                    f"found to infer Types from."
+                )
+            # No data sheet and no declared entries for this Level → nothing
+            # to do (e.g. an edge-less graph).
+            continue
 
         param_to_types: dict[str, list[str]] = {}
         for e in level_entries:
@@ -271,10 +286,10 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     spec = parse_parameter_sheet(sheets["Parameter"])
     _validate_scope(spec)
 
-    # When the Parameter sheet omits the Type column, derive Types (and per-
-    # Parameter Type membership) from the data sheets themselves.
-    if not spec.types_declared_in_parameter_sheet:
-        _infer_param_types_from_sheets(spec, sheets)
+    # Resolve per-Level Type info from the data sheets. Runs unconditionally
+    # so that Levels missing from the Parameter sheet (notably Edge, kept
+    # around purely for graph connectivity) still get their Types discovered.
+    _infer_param_types_from_sheets(spec, sheets)
 
     y_level = spec.y_levels()[0]           # "Node" or "Graph"
 

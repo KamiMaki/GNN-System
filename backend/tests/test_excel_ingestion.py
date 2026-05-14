@@ -727,3 +727,85 @@ def test_parse_excel_no_type_in_parameter_declared_but_no_data():
     wb = _build_workbook({"Parameter": parameter, "Node": nodes, "Graph": graph})
     with pytest.raises(ValueError, match="no Type slice"):
         parse_excel_file(wb)
+
+
+# ── Edge connectivity is always loaded (no Parameter Edge row required) ──
+
+def test_parse_excel_edge_loaded_without_parameter_entry():
+    """Parameter sheet has no Edge row, but the Edge sheet exists →
+    edges are still loaded for graph connectivity."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Graph", "Parameter": "score"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 1, 1],
+        "Node": [0, 1, 2, 3],
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+    })
+    edges = pd.DataFrame({
+        "Graph_ID": [1, 1, 1],
+        "Source_Node_ID": [0, 1, 2],
+        "Target_Node_ID": [1, 2, 3],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "score": [1.0]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node": nodes, "Edge": edges, "Graph": graph,
+    })
+    result = parse_excel_file(wb)
+    # Edge dataframe must be populated even though Parameter sheet declares
+    # nothing about edges.
+    assert "default" in result["edge_dfs"]
+    assert len(result["edge_dfs"]["default"]) == 3
+    # Unified edges_df should also reflect the same connectivity.
+    assert len(result["edges_df"]) == 3
+    assert result["canonical_edges"] == [("default", "default", "default")]
+
+
+def test_parse_excel_edge_loaded_without_parameter_entry_hetero():
+    """Hetero: Parameter sheet has no Edge row, but Edge sheet's Type column
+    declares multiple relations → each relation produces a canonical edge."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Parameter": "cell_area"},
+        {"XY": "X", "Level": "Node", "Parameter": "pin_cap"},
+        {"XY": "Y", "Level": "Graph", "Parameter": "score"},
+    ])
+    nodes = pd.DataFrame([
+        {"Graph_ID": 1, "Node": 0, "Type": "cell", "cell_area": 1.0, "pin_cap": None},
+        {"Graph_ID": 1, "Node": 1, "Type": "cell", "cell_area": 2.0, "pin_cap": None},
+        {"Graph_ID": 1, "Node": 2, "Type": "pin", "cell_area": None, "pin_cap": 0.1},
+        {"Graph_ID": 1, "Node": 3, "Type": "pin", "cell_area": None, "pin_cap": 0.2},
+    ])
+    edges = pd.DataFrame([
+        {"Graph_ID": 1, "Source_Node_ID": 0, "Target_Node_ID": 2,
+         "Source_Node_Type": "cell", "Target_Node_Type": "pin", "Type": "cell2pin"},
+        {"Graph_ID": 1, "Source_Node_ID": 2, "Target_Node_ID": 3,
+         "Source_Node_Type": "pin", "Target_Node_Type": "pin", "Type": "pin2pin"},
+    ])
+    graph = pd.DataFrame({"Graph_ID": [1], "score": [1.5]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node": nodes, "Edge": edges, "Graph": graph,
+    })
+    result = parse_excel_file(wb)
+    assert set(result["edge_dfs"].keys()) == {"cell2pin", "pin2pin"}
+    assert {tuple(c) for c in result["canonical_edges"]} == {
+        ("cell", "cell2pin", "pin"),
+        ("pin", "pin2pin", "pin"),
+    }
+
+
+def test_parse_excel_no_edge_sheet_is_ok():
+    """Sanity: a graph with zero edges still parses (node-only graph)."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Node", "Parameter": "label"},
+    ])
+    nodes = pd.DataFrame({
+        "Node": [0, 1, 2, 3],
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+        "label": [0.0, 1.0, 0.0, 1.0],
+    })
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes})
+    result = parse_excel_file(wb)
+    assert result["edge_dfs"] == {}
+    assert len(result["edges_df"]) == 0
