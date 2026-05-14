@@ -498,6 +498,14 @@ async def get_graph_sample(
     dataset_id = ds["dataset_id"]
     excel_hash = ds.get("excel_hash", "")
 
+    # Default to the first graph on multi-graph datasets so the initial
+    # request doesn't fall back to a cross-graph BFS sample (which would
+    # briefly render every graph stacked on top of each other).
+    if not graph_name:
+        gi = ds.get("graph_index", [])
+        if len(gi) > 1:
+            graph_name = str(gi[0]["id"])
+
     # ETag: encode dataset content + graph selection + limit
     etag = f'"{excel_hash}-{graph_name or "all"}-{limit}"'
     if request.headers.get("if-none-match") == etag:
@@ -599,7 +607,7 @@ async def get_graph_sample(
                 attrs[c] = str(v)
         nodes_out.append({
             "id": _norm_id(row["node_id"]),
-            "label": f"node_{_norm_id(row['node_id'])}",
+            "label": _norm_id(row["node_id"]),
             "node_type": str(row["_node_type"]) if "_node_type" in row and not pd.isna(row["_node_type"]) else None,
             "attributes": attrs,
         })
