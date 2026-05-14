@@ -617,3 +617,113 @@ def test_parse_excel_unified_type_with_no_rows_raises():
     })
     with pytest.raises(ValueError, match="Type='pin'"):
         parse_excel_file(wb)
+
+
+# ── Parameter sheet WITHOUT Type column (Types inferred from data) ────────
+
+def test_parse_parameter_sheet_without_type_column():
+    """Parameter sheet may omit the Type column entirely; entries carry no
+    Type and the spec exposes empty Type lists until ingestion resolves them
+    from the data sheets."""
+    df = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Node", "Parameter": "label", "Weight": 2.0},
+    ])
+    spec = parse_parameter_sheet(df)
+    assert spec.types_declared_in_parameter_sheet is False
+    assert spec.types_for_level("Node") == []
+    assert all(e.type_ is None for e in spec.entries)
+
+
+def test_parse_excel_no_type_in_parameter_homo():
+    """Homogeneous graph: Parameter sheet omits Type, Node sheet has Type
+    column with a single value. Types should be auto-discovered."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Parameter": "X_1"},
+        {"XY": "X", "Level": "Node", "Parameter": "X_2"},
+        {"XY": "Y", "Level": "Node", "Parameter": "label", "Weight": 1.0},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1] * 4,
+        "Node": [0, 1, 2, 3],
+        "Type": ["default"] * 4,
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+        "X_2": [1.0, 2.0, 3.0, 4.0],
+        "label": [0.5, 0.7, 0.9, 1.1],
+    })
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes})
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is False
+    assert set(result["node_dfs"].keys()) == {"default"}
+    assert result["task_type"] == "node_regression"
+    assert result["label_column"] == "label"
+
+
+def test_parse_excel_no_type_in_parameter_no_type_in_data():
+    """Parameter has no Type column AND data sheets have no Type column →
+    a synthetic single 'default' type is used."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Parameter": "X_1"},
+        {"XY": "Y", "Level": "Graph", "Parameter": "score"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1, 2, 2], "Node": [0, 1, 0, 1],
+        "X_1": [0.1, 0.2, 0.3, 0.4],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1, 2], "score": [3.14, 2.71]})
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes, "Graph": graph})
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is False
+    assert set(result["node_dfs"].keys()) == {"default"}
+    assert result["task_type"] == "graph_regression"
+
+
+def test_parse_excel_no_type_in_parameter_hetero_inferred():
+    """Hetero: Parameter has no Type, Node sheet declares multiple Types.
+    Each X parameter is auto-assigned to the Type whose slice has data."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Parameter": "cell_area"},
+        {"XY": "X", "Level": "Node", "Parameter": "pin_cap"},
+        {"XY": "X", "Level": "Edge", "Parameter": "c2p_delay"},
+        {"XY": "Y", "Level": "Graph", "Parameter": "score"},
+    ])
+    nodes = pd.DataFrame([
+        {"Graph_ID": 1, "Node": 0, "Type": "cell", "cell_area": 1.2, "pin_cap": None},
+        {"Graph_ID": 1, "Node": 1, "Type": "cell", "cell_area": 2.3, "pin_cap": None},
+        {"Graph_ID": 1, "Node": 2, "Type": "pin", "cell_area": None, "pin_cap": 0.4},
+        {"Graph_ID": 1, "Node": 3, "Type": "pin", "cell_area": None, "pin_cap": 0.5},
+    ])
+    edges = pd.DataFrame([
+        {"Graph_ID": 1, "Source_Node_ID": 0, "Target_Node_ID": 2,
+         "Source_Node_Type": "cell", "Target_Node_Type": "pin",
+         "Type": "cell2pin", "c2p_delay": 5.0},
+    ])
+    graph = pd.DataFrame({"Graph_ID": [1], "score": [1.5]})
+    wb = _build_workbook({
+        "Parameter": parameter, "Node": nodes, "Edge": edges, "Graph": graph,
+    })
+    result = parse_excel_file(wb)
+    assert result["is_heterogeneous"] is True
+    assert set(result["node_dfs"].keys()) == {"cell", "pin"}
+    assert "pin_cap" not in result["node_dfs"]["cell"].columns
+    assert "cell_area" not in result["node_dfs"]["pin"].columns
+    assert result["canonical_edges"] == [("cell", "cell2pin", "pin")]
+    assert result["label_column"] == "score"
+
+
+def test_parse_excel_no_type_in_parameter_declared_but_no_data():
+    """Parameter without Type column declares a column that exists in no
+    Type's slice → clear error."""
+    parameter = pd.DataFrame([
+        {"XY": "X", "Level": "Node", "Parameter": "ghost"},
+        {"XY": "Y", "Level": "Graph", "Parameter": "score"},
+    ])
+    nodes = pd.DataFrame({
+        "Graph_ID": [1, 1], "Node": [0, 1], "Type": ["default", "default"],
+        # No 'ghost' column anywhere.
+        "X_1": [0.1, 0.2],
+    })
+    graph = pd.DataFrame({"Graph_ID": [1], "score": [1.0]})
+    wb = _build_workbook({"Parameter": parameter, "Node": nodes, "Graph": graph})
+    with pytest.raises(ValueError, match="no Type slice"):
+        parse_excel_file(wb)

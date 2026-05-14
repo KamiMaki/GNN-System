@@ -160,6 +160,94 @@ def _normalise_edge_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
     return out
 
 
+def _discover_types_from_data(
+    level: str,
+    sheets: dict[str, pd.DataFrame],
+) -> tuple[list[str], dict[str, pd.DataFrame]]:
+    """Discover Type values for a Level by inspecting the data sheets.
+
+    Used when the Parameter sheet omits the Type column. Prefers the unified
+    single-sheet layout (a sheet literally named ``Node`` / ``Edge`` /
+    ``Graph``); falls back to legacy per-type sheets named ``Level_<type>``.
+
+    Returns ``(types, per_type_slices)``. ``per_type_slices`` is the source
+    DataFrame restricted to rows of each Type — used downstream to decide
+    which Parameters live on which Type.
+    """
+    if level in sheets:
+        df = sheets[level]
+        type_col = next(
+            (c for c in df.columns if str(c).strip().lower() == "type"),
+            None,
+        )
+        if type_col is None:
+            return ["default"], {"default": df}
+        types_seen: list[str] = []
+        for raw in df[type_col].astype(str).map(str.strip):
+            if raw and raw.lower() != "nan" and raw not in types_seen:
+                types_seen.append(raw)
+        slices = {
+            t: df[df[type_col].astype(str).str.strip() == t].copy()
+            for t in types_seen
+        }
+        return types_seen, slices
+
+    prefix = f"{level}_"
+    found: list[str] = []
+    slices: dict[str, pd.DataFrame] = {}
+    for name, df in sheets.items():
+        if name.startswith(prefix):
+            t = name[len(prefix):]
+            found.append(t)
+            slices[t] = df
+    return found, slices
+
+
+def _infer_param_types_from_sheets(
+    spec: ExcelGraphSpec,
+    sheets: dict[str, pd.DataFrame],
+) -> None:
+    """Populate ``spec`` with Type assignments derived from the data sheets.
+
+    For each Level that has Parameter rows but no Type was given in the
+    Parameter sheet, this walks the Node / Edge / Graph sheets, lists their
+    distinct Type values, and assigns each Parameter to the Types whose slice
+    actually contains data (i.e. the column exists and has at least one
+    non-null value).
+    """
+    for level in VALID_LEVELS:
+        level_entries = spec.entries_for_level(level)
+        if not level_entries:
+            continue
+        types, type_slices = _discover_types_from_data(level, sheets)
+        if not types:
+            decl = sorted({e.parameter for e in level_entries})
+            raise ValueError(
+                f"Parameter sheet declares {level}-level parameters {decl} but "
+                f"no '{level}' (or 'Level_<type>') data sheet was found to "
+                f"infer Types from."
+            )
+
+        param_to_types: dict[str, list[str]] = {}
+        for e in level_entries:
+            matched: list[str] = []
+            for t in types:
+                sub = type_slices[t]
+                if e.parameter in sub.columns and sub[e.parameter].notna().any():
+                    matched.append(t)
+            if not matched:
+                raise ValueError(
+                    f"Parameter '{e.parameter}' (Level={level}) is declared in "
+                    f"the Parameter sheet but no Type slice of the {level} "
+                    f"sheet carries non-null data for that column. Either "
+                    f"populate the column or remove the row from the Parameter "
+                    f"sheet."
+                )
+            param_to_types[e.parameter] = matched
+
+        spec.assign_types_for_level(level, types, param_to_types)
+
+
 def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     """Parse an Excel workbook matching graph_data_template.xlsx.
 
@@ -182,6 +270,11 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     sheets = _load_workbook(source)
     spec = parse_parameter_sheet(sheets["Parameter"])
     _validate_scope(spec)
+
+    # When the Parameter sheet omits the Type column, derive Types (and per-
+    # Parameter Type membership) from the data sheets themselves.
+    if not spec.types_declared_in_parameter_sheet:
+        _infer_param_types_from_sheets(spec, sheets)
 
     y_level = spec.y_levels()[0]           # "Node" or "Graph"
 
@@ -332,10 +425,25 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
     # All Y entries are on the same Level (validated above). Multiple Y
     # entries per Level — each becomes a parallel regression target.
     y_entries_all = [e for e in spec.entries if e.xy == "Y" and e.level == y_level]
-    y_types_seen = []
+
+    def _resolve_y_type(e) -> str:
+        if e.type_ is not None:
+            return e.type_
+        candidates = spec.types_for_parameter(e.level, e.parameter)
+        if len(candidates) == 1:
+            return candidates[0]
+        raise ValueError(
+            f"Y column '{e.parameter}' on {e.level} resolves to multiple Types "
+            f"{candidates or '∅'}. Y must belong to exactly one Type — either "
+            f"declare the Type in the Parameter sheet or restrict the column "
+            f"to a single Type's rows."
+        )
+
+    y_types_seen: list[str] = []
     for e in y_entries_all:
-        if e.type_ not in y_types_seen:
-            y_types_seen.append(e.type_)
+        t = _resolve_y_type(e)
+        if t not in y_types_seen:
+            y_types_seen.append(t)
 
     label_columns: list[str] = [e.parameter for e in y_entries_all]
     label_weights: list[float] = [
@@ -360,11 +468,12 @@ def parse_excel_file(source: bytes | str, dataset_name: str = "") -> dict:
 
     kinds: list[str] = []
     for e in y_entries_all:
-        src_df = _source_df_for_level(y_level, e.type_)
+        y_t = _resolve_y_type(e)
+        src_df = _source_df_for_level(y_level, y_t)
         if e.parameter not in src_df.columns:
             raise ValueError(
                 f"Label column '{e.parameter}' declared in Parameter sheet "
-                f"is not present in data sheet {y_level}_{e.type_}."
+                f"is not present in data sheet {y_level}_{y_t}."
             )
         kinds.append(_infer_task_kind(src_df[e.parameter]))
 
