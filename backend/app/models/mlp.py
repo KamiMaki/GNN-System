@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch_geometric.nn import global_mean_pool
 from torch.nn import Linear, BatchNorm1d
+from app.models._lr import build_scheduler
 
 from app.models.loss import weighted_regression_loss
 
@@ -62,7 +63,9 @@ class MLPClassifier(pl.LightningModule):
         out = self(batch.x, batch.edge_index if hasattr(batch, "edge_index") else None, batch.edge_attr if hasattr(batch, "edge_attr") else None, batch=batch.batch if hasattr(batch, "batch") else None)
         if self.task_type.endswith("regression"):
             loss = weighted_regression_loss(out, batch.y, self.loss_weights, self.num_targets)
+            mae = (out - batch.y).abs().mean()
             self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.num_nodes)
+            self.log(f"{stage}_mae", mae, prog_bar=False, batch_size=batch.num_nodes)
         else:
             weight = self.class_weights.to(out.device) if self.class_weights is not None else None
             loss = F.cross_entropy(out, batch.y, weight=weight)
@@ -80,8 +83,5 @@ class MLPClassifier(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-4)
-        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
-        return {
-            "optimizer": opt,
-            "lr_scheduler": {"scheduler": sched, "monitor": "val_loss", "interval": "epoch"},
-        }
+        sched = build_scheduler(opt)
+        return {"optimizer": opt, "lr_scheduler": sched}

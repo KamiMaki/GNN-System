@@ -62,7 +62,7 @@ def _prepare_homo(parsed: dict):
 
 
 def _prepare_hetero(parsed: dict):
-    data_list, _s, _f, _ce = parsed_excel_to_hetero_list(parsed)
+    data_list, _s, _f, _ce, _exc = parsed_excel_to_hetero_list(parsed)
     metadata = data_list[0].metadata()
     gen = torch.Generator().manual_seed(0)
     perm = torch.randperm(len(data_list), generator=gen).tolist()

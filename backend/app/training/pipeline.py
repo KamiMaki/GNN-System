@@ -31,6 +31,7 @@ import pytorch_lightning as pl
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     mean_squared_error, mean_absolute_error, r2_score,
+    mean_absolute_percentage_error,
     confusion_matrix as sklearn_confusion_matrix,
 )
 from torch_geometric.loader import DataLoader
@@ -50,10 +51,13 @@ log = logging.getLogger(__name__)
 # ── metric helpers ────────────────────────────────────────────────────────
 
 def _regression_metrics(y_true, y_pred) -> dict:
+    arr = np.asarray(y_true)
+    mape = None if (arr == 0).any() else round(float(mean_absolute_percentage_error(y_true, y_pred)), 4)
     return {
         "mse": round(float(mean_squared_error(y_true, y_pred)), 4),
         "mae": round(float(mean_absolute_error(y_true, y_pred)), 4),
         "r2_score": round(float(r2_score(y_true, y_pred)), 4),
+        "mape": mape,
     }
 
 
@@ -77,13 +81,14 @@ def _device_pair() -> tuple[str, str]:
 
 
 def _trainer(task_id: str, max_epochs: int, callbacks: list, checkpoint_dir: Path,
-             accelerator: str, precision: str) -> pl.Trainer:
+             accelerator: str, precision: str, is_regression: bool = False) -> pl.Trainer:
+    monitor = "val_mae" if is_regression else "val_loss"
     ckpt = pl.callbacks.ModelCheckpoint(
         dirpath=str(checkpoint_dir), filename="best",
-        monitor="val_loss", mode="min", save_top_k=1, save_weights_only=True,
+        monitor=monitor, mode="min", save_top_k=1, save_weights_only=True,
     )
     es = pl.callbacks.EarlyStopping(
-        monitor="val_loss", patience=settings.PATIENCE, mode="min",
+        monitor=monitor, patience=settings.PATIENCE, mode="min",
     )
     return pl.Trainer(
         max_epochs=max_epochs,
@@ -135,7 +140,7 @@ def _prepare_hetero(dataset: dict, generator: torch.Generator):
         "label_columns": label_columns,
         "canonical_edges": dataset["canonical_edges"],
     }
-    data_list, _s, _f, _ce = parsed_excel_to_hetero_list(parsed)
+    data_list, _s, _f, _ce, _excl = parsed_excel_to_hetero_list(parsed)
     metadata = data_list[0].metadata()
     num_classes = 1 if dataset["task_type"].endswith("regression") else 2
     train, val, test = _split_three(data_list, generator)
@@ -272,6 +277,7 @@ def run_training_task(task_id: str) -> None:
 
         store.update_task(
             task_id, device=device_str, status="PREPROCESSING", progress=5,
+            current_phase="preprocessing",
             current_trial=0, total_trials=n_trials,
         )
 
@@ -302,6 +308,7 @@ def run_training_task(task_id: str) -> None:
 
         store.update_task(
             task_id, progress=15, status="TRAINING",
+            current_phase="hpo",
             current_trial=0, total_trials=n_trials,
         )
 
@@ -318,6 +325,7 @@ def run_training_task(task_id: str) -> None:
 
         store.update_task(
             task_id, progress=50, best_config=best_config,
+            current_phase="final_training",
             current_trial=best_config.get("completed_trials", n_trials),
             total_trials=n_trials,
         )
@@ -365,6 +373,7 @@ def run_training_task(task_id: str) -> None:
             task_id=task_id, max_epochs=settings.MAX_EPOCHS,
             callbacks=[progress_cb], checkpoint_dir=ckpt_dir,
             accelerator=accelerator, precision=precision,
+            is_regression=is_regression,
         )
 
         t0 = time.time()
@@ -378,40 +387,59 @@ def run_training_task(task_id: str) -> None:
             model.load_state_dict(state["state_dict"])
 
         # ── Evaluation ──
+        # Graph-level paths (_prepare_hetero / _prepare_graph_homo) scale BOTH
+        # train and val items, so train_y AND val_y must be inverse-scaled
+        # before metric computation. Forgetting val_y produced absurd val
+        # metrics (R²=-30+, MAPE in the thousands) — see 2026-04-28 fix.
+        # Node-level path (_prepare_node) scales train only; val_items reuses
+        # the unscaled test data, so val_y is already in raw space and must
+        # NOT be inverse-scaled a second time.
         if isinstance(train_items, list):
             train_preds, train_y = _predict_list(model, train_items, task_type, is_hetero, scaler)
-            # Unscale the train-side y for metric parity with test (train y is currently scaled).
+            val_preds, val_y = _predict_list(model, val_items, task_type, is_hetero, scaler)
+            test_preds, test_y = _predict_list(model, test_items, task_type, is_hetero, scaler)
             if is_regression:
                 train_y = scaler.inverse_np(train_y)
-            test_preds, test_y = _predict_list(model, test_items, task_type, is_hetero, scaler)
+                val_y = scaler.inverse_np(val_y)
         else:
             train_preds, train_y = _predict_single(model, train_items, task_type, scaler)
+            val_preds, val_y = _predict_single(model, val_items, task_type, scaler)
+            test_preds, test_y = _predict_single(model, test_items, task_type, scaler)
             if is_regression:
                 train_y = scaler.inverse_np(train_y)
-            test_preds, test_y = _predict_single(model, test_items, task_type, scaler)
 
         per_target_metrics: dict = {}
         per_target_residuals: dict = {}
         if is_regression:
             if num_targets > 1:
                 # Compute metrics per Y column; aggregate by mean for the
-                # backward-compatible overall train/test metrics fields.
+                # backward-compatible overall train/val/test metrics fields.
                 target_metrics_test: list[dict] = []
                 target_metrics_train: list[dict] = []
+                target_metrics_val: list[dict] = []
                 for i, col in enumerate(label_columns):
                     tr_m = _regression_metrics(train_y[:, i], train_preds[:, i])
+                    va_m = _regression_metrics(val_y[:, i], val_preds[:, i])
                     te_m = _regression_metrics(test_y[:, i], test_preds[:, i])
                     target_metrics_train.append(tr_m)
+                    target_metrics_val.append(va_m)
                     target_metrics_test.append(te_m)
                     per_target_metrics[col] = te_m
                     per_target_residuals[col] = [
-                        {"actual": round(float(test_y[j, i]), 4),
-                         "predicted": round(float(test_preds[j, i]), 4)}
+                        {
+                            "actual": round(float(test_y[j, i]), 4),
+                            "predicted": round(float(test_preds[j, i]), 4),
+                            "error": round(float(test_y[j, i] - test_preds[j, i]), 4),
+                        }
                         for j in range(min(500, len(test_y)))
                     ]
                 train_metrics = {
                     k: round(float(np.mean([m[k] for m in target_metrics_train])), 4)
                     for k in target_metrics_train[0]
+                }
+                val_metrics = {
+                    k: round(float(np.mean([m[k] for m in target_metrics_val])), 4)
+                    for k in target_metrics_val[0]
                 }
                 test_metrics = {
                     k: round(float(np.mean([m[k] for m in target_metrics_test])), 4)
@@ -424,15 +452,20 @@ def run_training_task(task_id: str) -> None:
                 residual = per_target_residuals[label_columns[0]]
             else:
                 train_metrics = _regression_metrics(train_y, train_preds)
+                val_metrics = _regression_metrics(val_y, val_preds)
                 test_metrics = _regression_metrics(test_y, test_preds)
                 cm = None
                 residual = [
-                    {"actual": round(float(test_y[i]), 4),
-                     "predicted": round(float(test_preds[i]), 4)}
+                    {
+                        "actual": round(float(test_y[i]), 4),
+                        "predicted": round(float(test_preds[i]), 4),
+                        "error": round(float(test_y[i] - test_preds[i]), 4),
+                    }
                     for i in range(min(500, len(test_y)))
                 ]
         else:
             train_metrics = _classification_metrics(train_y, train_preds)
+            val_metrics = _classification_metrics(val_y, val_preds)
             test_metrics = _classification_metrics(test_y, test_preds)
             labels = sorted(set(test_y.tolist()) | set(test_preds.tolist()))
             cm_arr = sklearn_confusion_matrix(test_y, test_preds, labels=labels)
@@ -442,7 +475,7 @@ def run_training_task(task_id: str) -> None:
         report = {
             "task_type": task_type,
             "train_metrics": train_metrics,
-            "val_metrics": dict(test_metrics),
+            "val_metrics": val_metrics,
             "test_metrics": test_metrics,
             "history": progress_cb.history,
             "confusion_matrix": cm,
@@ -464,6 +497,7 @@ def run_training_task(task_id: str) -> None:
 
         store.update_task(
             task_id, status="COMPLETED", progress=100,
+            current_phase="completed",
             results={
                 "train_metrics": train_metrics,
                 "test_metrics": test_metrics,
@@ -525,6 +559,7 @@ def run_training_task(task_id: str) -> None:
     except Exception:
         log.exception("Training task %s failed", task_id)
         store.update_task(task_id, status="FAILED", progress=0,
+                          current_phase="failed",
                           error="Training failed. Check server logs for details.")
         tk = store.get_task(task_id) or {}
         if tk.get("project_id"):

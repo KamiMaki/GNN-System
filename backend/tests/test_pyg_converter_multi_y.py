@@ -151,7 +151,7 @@ def test_multi_y_hetero_graph_regression():
         "label_column": "y1",
         "canonical_edges": [("cell", "cell2pin", "pin")],
     }
-    data_list, _scalers, _feat, _ce = parsed_excel_to_hetero_list(parsed)
+    data_list, _scalers, _feat, _ce, _exc = parsed_excel_to_hetero_list(parsed)
     assert len(data_list) == 2
     for d in data_list:
         # Shape (1, T) for PyG batching.
@@ -181,7 +181,7 @@ def test_single_y_hetero_backwards_compat():
         "label_column": "y",          # legacy key only
         "canonical_edges": [("cell", "cell2pin", "pin")],
     }
-    data_list, _, _, _ = parsed_excel_to_hetero_list(parsed)
+    data_list, _, _, _, _ = parsed_excel_to_hetero_list(parsed)
     for d in data_list:
         assert d.y.shape == (1,)
         assert d.num_targets == 1

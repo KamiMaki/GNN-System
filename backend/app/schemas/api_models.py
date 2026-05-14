@@ -60,6 +60,8 @@ class ColumnInfo(BaseModel):
     dtype: str
     missing_count: int
     missing_pct: float
+    presence_pct: float = 0.0
+    low_presence_warning: bool = False
     unique_count: int
     # Populated for heterogeneous graphs (one entry per (type, column)).
     node_type: Optional[str] = None
@@ -81,6 +83,8 @@ class GenericExploreData(BaseModel):
     node_types: list[str] = []
     edge_types: list[str] = []
     canonical_edges: list[list[str]] = []
+    per_graph_feature_schema: Optional[dict] = None
+    schema_warnings: Optional[list[str]] = None
 
 
 # ── Label validation / imputation ──────────────────────────────────────────
@@ -162,6 +166,7 @@ class SplitMetrics(BaseModel):
     mse: Optional[float] = None
     mae: Optional[float] = None
     r2_score: Optional[float] = None
+    mape: Optional[float] = None
 
 
 class TaskResults(BaseModel):
@@ -193,6 +198,12 @@ class TaskStatus(BaseModel):
     project_id: Optional[str] = None
     status: Literal["QUEUED", "PREPROCESSING", "TRAINING", "COMPLETED", "FAILED"]
     progress: int
+    # current_phase is a finer-grained label than ``status`` so the UI can
+    # distinguish the HPO sweep from the final training run (both report
+    # status="TRAINING"). Allowed values:
+    #   "queued" | "preprocessing" | "hpo" | "final_training"
+    #   | "completed" | "failed"
+    current_phase: Optional[str] = None
     current_trial: Optional[int] = None
     total_trials: Optional[int] = None
     device: Optional[str] = None

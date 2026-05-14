@@ -1,8 +1,19 @@
 """Heterogeneous GNN wrapper for graph-level tasks.
 
-Uses ``torch_geometric.nn.to_hetero`` to lift a homogeneous backbone (GCN / GAT /
-SAGE / GIN) into a heterogeneous one, then pools per-type node embeddings and
-feeds a linear head.
+Uses ``torch_geometric.nn.to_hetero`` to lift a homogeneous backbone (GAT /
+SAGE) into a heterogeneous one, then pools per-type node embeddings and feeds a
+linear head.
+
+Conv choice note
+----------------
+Only ``SAGEConv`` and ``GATConv`` are supported as backbones.  ``GCNConv`` is
+explicitly excluded because it does **not** support bipartite message passing
+(i.e., edges where source and destination node types differ), which is the
+typical case in heterogeneous graphs.  The factory (``app.models.factory``)
+maps any unsupported conv choice to ``"sage"`` and emits a warning.
+
+User-selected ``model_family`` is only honored in homogeneous mode.  For hetero
+training the effective conv is always ``"gat"`` or ``"sage"``.
 
 Scope: graph_regression / graph_classification. Node-level hetero prediction is
 deferred.
@@ -14,8 +25,9 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch import nn
 from torch_geometric.nn import (
-    GCNConv, GATConv, SAGEConv, GINConv, global_mean_pool, to_hetero,
+    GATConv, SAGEConv, global_mean_pool, to_hetero,
 )
+from app.models._lr import build_scheduler
 
 from app.models.loss import weighted_regression_loss
 
@@ -30,16 +42,15 @@ class _HomoBackbone(nn.Module):
                  dropout: float, conv: str):
         super().__init__()
         conv_cls = {
-            "gcn": GCNConv,
             "gat": GATConv,
             "sage": SAGEConv,
         }[conv]
-        # to_hetero() duplicates each conv per relation. GCNConv / GATConv
-        # default to ``add_self_loops=True`` which is invalid when an edge
-        # connects two different node types (source != target). Force it
-        # off so the lift works across cross-type relations.
+        # to_hetero() duplicates each conv per relation. GATConv defaults to
+        # ``add_self_loops=True`` which is invalid when an edge connects two
+        # different node types (source != target). Force it off so the lift
+        # works across cross-type relations. SAGEConv does not have this flag.
         extra: dict = {}
-        if conv in ("gcn", "gat"):
+        if conv == "gat":
             extra["add_self_loops"] = False
         self.convs = nn.ModuleList()
         # First conv goes from -1 (lazy init so to_hetero can wire per-type dims)
@@ -133,9 +144,12 @@ class HeteroGraphRegressor(pl.LightningModule):
 
         if self.task_type.endswith("regression"):
             loss = weighted_regression_loss(out, batch.y, self.loss_weights, self.num_targets)
+            mae = (out - batch.y).abs().mean()
+            self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.y.size(0))
+            self.log(f"{stage}_mae", mae, prog_bar=False, batch_size=batch.y.size(0))
         else:
             loss = F.cross_entropy(out, batch.y.long())
-        self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.y.size(0))
+            self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=batch.y.size(0))
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -146,8 +160,5 @@ class HeteroGraphRegressor(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-4)
-        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
-        return {
-            "optimizer": opt,
-            "lr_scheduler": {"scheduler": sched, "monitor": "val_loss", "interval": "epoch"},
-        }
+        sched = build_scheduler(opt)
+        return {"optimizer": opt, "lr_scheduler": sched}
