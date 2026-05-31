@@ -11,14 +11,15 @@ from typing import Optional
 
 import pytorch_lightning as pl
 
-log = logging.getLogger(__name__)
-
 from app.models.gcn import GCNClassifier
 from app.models.gat import GATClassifier
 from app.models.sage import SAGEClassifier
 from app.models.gin import GINClassifier
 from app.models.mlp import MLPClassifier
+from app.models.transformer import TransformerClassifier
 from app.models.hetero_wrapper import HeteroGraphRegressor
+
+log = logging.getLogger(__name__)
 
 
 HOMO_REGISTRY: dict[str, type[pl.LightningModule]] = {
@@ -27,14 +28,15 @@ HOMO_REGISTRY: dict[str, type[pl.LightningModule]] = {
     "sage": SAGEClassifier,
     "gin": GINClassifier,
     "mlp": MLPClassifier,
+    "transformer": TransformerClassifier,
 }
 
 # Backbones to_hetero can lift. MLP/GIN are skipped (MLP has no edges; GIN's
 # inner MLP doesn't play well with to_hetero's per-relation lift).
 # GCNConv is excluded: it does NOT support bipartite message passing (src ≠ dst
-# node type), which is the common case in heterogeneous graphs. GATConv and
-# SAGEConv both handle bipartite edges correctly.
-HETERO_BACKBONES = ("gat", "sage")
+# node type), which is the common case in heterogeneous graphs. GATConv,
+# SAGEConv and TransformerConv all handle bipartite edges correctly.
+HETERO_BACKBONES = ("gat", "sage", "transformer")
 
 
 def get_model(

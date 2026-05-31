@@ -20,11 +20,12 @@ import {
 
 const { Title, Text } = Typography;
 
-const ALL_MODELS_HOMO = ['gcn', 'gat', 'sage', 'gin', 'mlp'];
-// Heterogeneous graphs: GCN/GIN are excluded — both rely on assumptions
-// (single relation type, inner MLP) that break under PyG's `to_hetero` transform.
-// Backend skips them for hetero datasets, so the UI must too.
-const ALL_MODELS_HETERO = ['gat', 'sage', 'mlp'];
+const ALL_MODELS_HOMO = ['gcn', 'gat', 'sage', 'gin', 'mlp', 'transformer'];
+// Heterogeneous graphs: only GAT / GraphSAGE / Transformer support bipartite
+// message passing under PyG's `to_hetero`. GCN/GIN/MLP are not real hetero
+// backbones — the backend (HETERO_BACKBONES) maps anything else to SAGE — so the
+// UI must list exactly the backend's hetero backbones to avoid misleading picks.
+const ALL_MODELS_HETERO = ['gat', 'sage', 'transformer'];
 
 function formatTime(seconds: number): string {
     if (seconds < 0) return '\u2014';
@@ -66,6 +67,7 @@ export default function TrainPage() {
     // Drop unsupported models (gcn / gin) when project is hetero — prevents the user
     // from picking a model the backend will silently skip during training.
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile selection when homo/hetero availability changes
         setSelectedModels(prev => {
             const next = prev.filter(m => availableModels.includes(m));
             return next.length === prev.length ? prev : (next.length > 0 ? next : availableModels);

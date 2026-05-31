@@ -6,14 +6,16 @@ linear head.
 
 Conv choice note
 ----------------
-Only ``SAGEConv`` and ``GATConv`` are supported as backbones.  ``GCNConv`` is
-explicitly excluded because it does **not** support bipartite message passing
-(i.e., edges where source and destination node types differ), which is the
-typical case in heterogeneous graphs.  The factory (``app.models.factory``)
-maps any unsupported conv choice to ``"sage"`` and emits a warning.
+``SAGEConv``, ``GATConv`` and ``TransformerConv`` are supported as backbones.
+``GCNConv`` is explicitly excluded because it does **not** support bipartite
+message passing (i.e., edges where source and destination node types differ),
+which is the typical case in heterogeneous graphs.  The factory
+(``app.models.factory``) maps any unsupported conv choice to ``"sage"`` and
+emits a warning.
 
 User-selected ``model_family`` is only honored in homogeneous mode.  For hetero
-training the effective conv is always ``"gat"`` or ``"sage"``.
+training the effective conv is always ``"gat"``, ``"sage"`` or
+``"transformer"``.
 
 Scope: graph_regression / graph_classification. Node-level hetero prediction is
 deferred.
@@ -25,7 +27,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch import nn
 from torch_geometric.nn import (
-    GATConv, SAGEConv, global_mean_pool, to_hetero,
+    GATConv, SAGEConv, TransformerConv, global_mean_pool, to_hetero,
 )
 from app.models._lr import build_scheduler
 
@@ -44,11 +46,13 @@ class _HomoBackbone(nn.Module):
         conv_cls = {
             "gat": GATConv,
             "sage": SAGEConv,
+            "transformer": TransformerConv,
         }[conv]
         # to_hetero() duplicates each conv per relation. GATConv defaults to
         # ``add_self_loops=True`` which is invalid when an edge connects two
         # different node types (source != target). Force it off so the lift
-        # works across cross-type relations. SAGEConv does not have this flag.
+        # works across cross-type relations. SAGEConv and TransformerConv have
+        # no such flag (they add no implicit self-loops).
         extra: dict = {}
         if conv == "gat":
             extra["add_self_loops"] = False
