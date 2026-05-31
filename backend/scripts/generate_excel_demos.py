@@ -2,7 +2,6 @@
 
 Produces files under backend/demo_data/:
     * demo_multigraph_homo.v2.xlsx          — 30 graphs, homogeneous, graph regression
-    * demo_multigraph_homo_large.v2.xlsx    — 100 graphs, homogeneous, graph regression
     * demo_multigraph_hetero.v2.xlsx        — 30 graphs, 3 node types (cell/pin/net),
                                               2 edge types (cell_pin/pin_net),
                                               graph regression (total_wirelength)
@@ -631,12 +630,10 @@ def make_hetero_str_gid(n_graphs: int = 30) -> dict[str, pd.DataFrame]:
 
 def main() -> None:
     homo_v2 = OUT / "demo_multigraph_homo.v2.xlsx"
-    homo_large_v2 = OUT / "demo_multigraph_homo_large.v2.xlsx"
     hetero_v2 = OUT / "demo_multigraph_hetero.v2.xlsx"
     hetero_v3 = OUT / "demo_hetero_multifeature.v3.xlsx"
 
     _write(homo_v2, make_homo(30))
-    _write(homo_large_v2, make_homo(100))
 
     # Hetero file may be locked if open in Excel; fall back to a temp name.
     try:
@@ -656,14 +653,7 @@ def main() -> None:
         _write(fallback, make_hetero_str_gid(30))
         print(f"Skipped {hetero_v3} (open in Excel?); wrote {fallback} instead")
 
-    # Also refresh the unversioned homo alias (best-effort; may be locked by Excel).
-    try:
-        _write(OUT / "demo_multigraph_homo.xlsx", make_homo(30))
-    except PermissionError:
-        print("Skipped demo_multigraph_homo.xlsx (open in Excel?)")
-
     print(f"Wrote {homo_v2}")
-    print(f"Wrote {homo_large_v2}")
 
 
 if __name__ == "__main__":
